@@ -5,10 +5,9 @@ This is an independent Windows C#/.NET port, not a rename or recolor of Python b
 ## Immutable source
 
 The original `salehbinamrat/Hadramout` repository MUST remain untouched.
-A pinned copy of 61/63 original Git blobs is preserved under
-`reference/python-v1.1.3` with original blob SHAs. Two >1 MiB PNGs
-remain blocked from the GitHub connector upload and MUST be copied before
-the reference can be called complete. See `docs/SOURCE_MANIFEST.json`.
+A pinned **complete copy of all 63/63 Git blobs** is preserved under
+`reference/python-v1.1.3`, with exact source SHA verification, including
+`assets/default_card.png` and `assets/login_hero.png`. See `docs/SOURCE_MANIFEST.json`.
 
 Do not copy user databases, DPAPI records, machine fingerprints, or private
 license keys into this repository.
@@ -27,12 +26,14 @@ license keys into this repository.
 8. Windows Core and Windows Release tests on the same SHA; only after all pass,
    build and verify real x86/x64 Portable and Installer with SHA-256.
 
-## Current limitation
+## Current implementation and limitation
 
-This changeset ports only a test-covered, *non-networking* RouterOS word codec,
-command safety guard, and red palette constants. It does not contain a working
-desktop UI, router connection or release packages. Do NOT merge or release until
-the complete acceptance matrix and all package gates are satisfied.
+- RouterOS API word/sentence framing, command exchange and safety barriers have unit coverage.
+- Voucher creation core has regression coverage.
+- New transactional `PackageSettingsStore` saves and retrieves separate package presets, keeps Arabic JSON values, blocks opening legacy Python databases and resides in an independent `HadramoutNET` data folder. The original Python schema-v8 migration and all historical card records are **not yet implemented**.
+- WPF login screen is a **visual foundation only**: live login, full licensing/trial and service calls are deliberately disabled until their exact contracts are ported.
+- All source assets are copied unchanged. Their use in the new UI must be verified individually.
+- x86/x64 standalone Portable/Installer binaries are **not available**. A green foundation-test suite is not a full acceptance test.
 
-.NET 10 targets modern Windows, not Windows 7/8/8.1. Backward support needs a
-separate compatibility decision.
+Do not merge or distribute until feature parity is verified end to end and all four Windows packages pass real installer/portable validation. 
+.NET 10 targets modern Windows; Windows 7/8/8.1 require a separate compatibility design.
