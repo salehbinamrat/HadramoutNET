@@ -226,29 +226,7 @@ public static class CardExports
     /// Write through a same-folder temporary file, flush to disk, then replace
     /// the destination only after the export is complete. Clean up on failure.
     /// </summary>
-    private static string SaveAtomic(string content, string path)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        string destination = Path.GetFullPath(path);
-        string directory = Path.GetDirectoryName(destination)!;
-        Directory.CreateDirectory(directory);
-        string staged = Path.Combine(directory, ".nidi-export-" + Guid.NewGuid().ToString("N"));
-        try
-        {
-            using (var stream = new FileStream(staged, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            {
-                using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
-                writer.Write(content);
-                writer.Flush();
-                stream.Flush(flushToDisk: true);
-            }
-            File.Move(staged, destination, overwrite: true);
-            return destination;
-        }
-        finally
-        {
-            if (File.Exists(staged))
-                File.Delete(staged);
-        }
-    }
+    private static string SaveAtomic(string content, string path) =>
+        AtomicExportFile.Write(path, staged =>
+            File.WriteAllText(staged, content, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true)));
 }
