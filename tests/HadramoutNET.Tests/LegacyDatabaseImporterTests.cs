@@ -155,4 +155,48 @@ public sealed class LegacyDatabaseImporterTests
         }
         finally { Directory.Delete(root, true); }
     }
+
+    [Fact]
+    public void Older_single_router_v8_cards_without_router_id_are_imported_by_batch()
+    {
+        string root = NewFolder();
+        try
+        {
+            string source = Path.Combine(root, "nidi_cards.db");
+            string target = Path.Combine(root, "hadramout-net.db");
+            Fixture(source);
+            using (var db = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = source, Pooling = false }.ToString()))
+            {
+                db.Open();
+                Exec(db, "ALTER TABLE cards DROP COLUMN router_id");
+            }
+            new PackageSettingsStore(target);
+            Assert.Equal(1, new LegacyDatabaseImporter(target).Import(source).Cards);
+            Assert.Null(Read(target, "SELECT router_id FROM legacy_cards WHERE id=11"));
+            Assert.Equal(2L, Read(target, """
+                SELECT b.router_id FROM legacy_cards c
+                JOIN legacy_batches b ON b.id=c.batch_id WHERE c.id=11
+                """));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void Refuses_source_equal_to_target_without_modifying_source()
+    {
+        string root = NewFolder();
+        try
+        {
+            string source = Path.Combine(root, "nidi_cards.db");
+            Fixture(source);
+            byte[] hash = SHA256.HashData(File.ReadAllBytes(source));
+            Assert.Throws<InvalidOperationException>(
+                () => new LegacyDatabaseImporter(source).Import(source));
+            Assert.Equal(hash, SHA256.HashData(File.ReadAllBytes(source)));
+            Assert.Equal("8", Read(source, "SELECT value FROM meta WHERE key='schema_version'"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
 }
