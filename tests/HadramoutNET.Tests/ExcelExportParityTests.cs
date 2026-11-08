@@ -23,7 +23,7 @@ public sealed class ExcelExportParityTests
                     ("profile", "باقة يوم"), ("limit_bytes", "1048576"), ("price", "1500"))
             ], path);
             using var document = SpreadsheetDocument.Open(path, false);
-            var worksheet = document.WorkbookPart!.WorksheetParts.Single().Worksheet;
+            var worksheet = document.WorkbookPart!.WorksheetParts.Single().Worksheet ?? throw new InvalidOperationException("Missing worksheet.");
             var cells = worksheet.Descendants<Cell>().ToDictionary(cell => cell.CellReference!.Value!);
             Assert.Equal("sequence", cells["A1"].InlineString?.Text?.Text);
             Assert.Equal("0001", cells["A2"].InlineString?.Text?.Text);
@@ -53,8 +53,8 @@ public sealed class ExcelExportParityTests
             ExcelExporter.SaveExcel([Row(("username", "1")), Row(("username", "2"))], path, "A?B/C\\D:E*F[G]H");
             using var document = SpreadsheetDocument.Open(path, false);
             var book = document.WorkbookPart!;
-            Assert.Equal("ABCDEFGH", book.Workbook.Descendants<Sheet>().Single().Name!.Value);
-            var worksheet = book.WorksheetParts.Single().Worksheet;
+            Assert.Equal("ABCDEFGH", book.Workbook!.Descendants<Sheet>().Single().Name!.Value);
+            var worksheet = book.WorksheetParts.Single().Worksheet ?? throw new InvalidOperationException("Missing worksheet.");
             Assert.True(worksheet.Descendants<SheetView>().Single().RightToLeft!.Value);
             var pane = worksheet.Descendants<Pane>().Single();
             Assert.Equal(PaneStateValues.Frozen, pane.State?.Value);
