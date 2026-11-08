@@ -1,9 +1,7 @@
-# Source reference status (migration preparation)
+# Pinned Python reference fully copied
 
-- Original repository: `salehbinamrat/Hadramout`, pinned at `bdfb355b1dbaf8f868d811ea55d4c1af26eb3a37`.
-- Reference source is a **copy**, never a move. The original repository has not been modified.
-- 61 / 63 Git blobs were uploaded to this **new** repository and their Git blob SHAs were checked against the source.
-- **Two binary PNG files are not yet copied:** `assets/default_card.png` and `assets/login_hero.png`. GitHub's standard contents API did not return their contents because each exceeds 1 MiB. Do not present this reference as complete until both are copied and SHA-verified.
-- The archive under `reference/` is read-only migration reference. Python workflows nested under it are not release workflows.
-- The .NET version is not implemented yet. This commit is NOT a functional port and is NOT shippable.
-- All migration work must remain in a PR until full feature parity, real Windows Core/Release tests and four verified packages succeed.
+Source: `salehbinamrat/Hadramout` at commit `bdfb355b1dbaf8f868d811ea55d4c1af26eb3a37`.
+
+All **63 of 63** source Git blobs are copied **unchanged** into `reference/python-v1.1.3/` and verified against their original Git object SHAs, including the original PNGs `assets/default_card.png` and `assets/login_hero.png`. Reference data is immutable and used only for migration parity testing.
+
+**No modifications to the original repository.** No user SQLite data, private signing keys, DPAPI records, machine fingerprints or production device settings were transferred. This copied source is a reference, not a runnable .NET implementation. The new application is still under development and must not be distributed until end-to-end feature parity, Windows tests and four release packages are verified.
