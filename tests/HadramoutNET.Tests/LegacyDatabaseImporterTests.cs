@@ -47,8 +47,8 @@ public sealed class LegacyDatabaseImporterTests
             CREATE TABLE activity(id INTEGER PRIMARY KEY,ts TEXT,category TEXT,action TEXT,status TEXT,details TEXT);
             CREATE TABLE router_presets(router_id INTEGER,service TEXT,remote_id TEXT,profile_name TEXT,package_id INTEGER,PRIMARY KEY(router_id,service,remote_id),FOREIGN KEY(router_id) REFERENCES routers(id),FOREIGN KEY(package_id) REFERENCES packages(id));
             """);
-        Exec(db, $"""
-            INSERT INTO meta VALUES('schema_version','{version}');
+        Exec(db, $$"""
+            INSERT INTO meta VALUES('schema_version','{{version}}');
             INSERT INTO settings VALUES('create.quantity','60'),('license.code','"secret-license"'),('card.positions','{"username":[76,13]}');
             INSERT INTO routers VALUES(2,'المكلا','192.168.88.1',8728,'admin','dpapi:v1:PRIVATE',0,0,'local',21,1,'2026-11-08');
             INSERT INTO packages VALUES(9,'باقة المكلا','{"card.font_size":14,"print.rows":15,"license.code":"PRIVATE"}','2026-11-08');
