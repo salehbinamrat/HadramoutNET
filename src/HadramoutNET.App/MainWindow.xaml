@@ -1,0 +1,183 @@
+<Window x:Class="HadramoutNET.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="حضرموت لإدارة الشبكات وطباعة الكروت — تطوير .NET"
+        Width="1280" Height="820"
+        MinWidth="1008" MinHeight="648"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        FontFamily="Arial" FontSize="14"
+        FlowDirection="LeftToRight"
+        Background="{StaticResource WindowSand}">
+    <!-- Visual-only migration foundation; no login or licensing operation is
+         enabled until its original contract is ported and tested. -->
+    <Viewbox Stretch="Uniform" StretchDirection="DownOnly">
+        <Grid Width="1248" Height="765" Background="{StaticResource WindowSand}" Margin="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="355"/>
+                <ColumnDefinition Width="690"/>
+                <ColumnDefinition Width="185"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Original login left brand column -->
+            <Border Grid.Column="0" Margin="0,10,8,10"
+                    Background="{StaticResource CreamPanel}"
+                    BorderBrush="{StaticResource SandBorder}" BorderThickness="1">
+                <DockPanel LastChildFill="True">
+                    <Border Background="#C9A263" Height="5" DockPanel.Dock="Top"/>
+                    <StackPanel FlowDirection="RightToLeft"
+                                VerticalAlignment="Center" Margin="18,12">
+                        <TextBlock Text="حضرموت" Foreground="{StaticResource DarkRed}"
+                                   FontSize="44" FontWeight="Bold"
+                                   HorizontalAlignment="Center"/>
+                        <Border Height="2" Margin="45,15,45,14" Background="#C9A263"/>
+                        <TextBlock Text="لإدارة الشبكات وطباعة الكروت"
+                                   FontSize="23" FontWeight="Bold"
+                                   Foreground="#58452C" TextAlignment="Center"
+                                   TextWrapping="Wrap"/>
+                        <TextBlock Margin="6,24,6,20" TextAlignment="Center"
+                                   Foreground="{StaticResource TextMuted}"
+                                   FontSize="16" TextWrapping="Wrap"
+                                   Text="إدارة اتصالات MikroTik والباقات والمستخدمين، وإنشاء الكروت ومعاينتها وطباعتها من واجهة واحدة."/>
+                        <Border Background="#F2E5CC" Padding="14,10"
+                                HorizontalAlignment="Center">
+                            <TextBlock Text="الإصدار  v1.1.3" FontWeight="Bold"
+                                       Foreground="{StaticResource DarkRed}"/>
+                        </Border>
+                        <TextBlock Text="RouterOS V6 / V7   |   هوتسبوت • يوزرمنجر • برودباند"
+                                   Foreground="{StaticResource TextMuted}"
+                                   FontSize="13" TextWrapping="Wrap"
+                                   TextAlignment="Center" Margin="0,30,0,0"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <!-- Original center column: header, licensing panel, login form -->
+            <Border Grid.Column="1" Margin="0,10,8,10"
+                    Background="{StaticResource CreamPanel}"
+                    BorderBrush="{StaticResource SandBorder}" BorderThickness="1">
+                <DockPanel FlowDirection="RightToLeft">
+                    <Border Height="52" DockPanel.Dock="Top"
+                            Background="{StaticResource GlossyRed}">
+                        <DockPanel>
+                            <Border Background="#C9A263" Width="5" DockPanel.Dock="Right"/>
+                            <TextBlock Text="تسجيل الدخول" Foreground="White"
+                                       FontSize="23" FontWeight="Bold"
+                                       VerticalAlignment="Center" Margin="15,0"/>
+                        </DockPanel>
+                    </Border>
+                    <StackPanel Margin="14,10" Orientation="Vertical">
+                        <Border BorderBrush="{StaticResource SandBorder}" BorderThickness="1"
+                                Background="White" Padding="12,10" Margin="0,0,0,10">
+                            <StackPanel>
+                                <DockPanel>
+                                    <TextBlock Text="الترخيص" FontWeight="Bold" FontSize="16"
+                                               Foreground="{StaticResource DarkRed}"
+                                               DockPanel.Dock="Right"/>
+                                    <Button Content="التفاصيل" DockPanel.Dock="Left"
+                                            IsEnabled="False" Width="95" Height="32"/>
+                                </DockPanel>
+                                <TextBlock Text="التجربة المجانية لمدة 20 يوماً (480 ساعة) تبدأ بعد أول اتصال ناجح بالراوتر."
+                                           TextWrapping="Wrap" Margin="0,10,0,7"
+                                           FontSize="14" Foreground="{StaticResource TextMuted}"/>
+                                <Button Content="بدء التجربة المجانية — 20 يوماً"
+                                        Style="{StaticResource NavyReplacementButton}"
+                                        IsEnabled="False" Height="35"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border BorderBrush="{StaticResource SandBorder}" BorderThickness="1"
+                                Background="White" Padding="13,10">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <RadioButton Content="محلي" IsChecked="True"
+                                                 GroupName="connection" Margin="12,5"/>
+                                    <RadioButton Content="عن بُعد — رابط VPN"
+                                                 GroupName="connection" Margin="12,5"/>
+                                </StackPanel>
+                                <Grid Margin="0,12,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="105"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="65"/>
+                                        <ColumnDefinition Width="95"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="عنوان الراوتر :" Style="{StaticResource CaptionText}"/>
+                                    <TextBox Grid.Column="1" Text="192.168.88.1" Margin="5,0,10,0"/>
+                                    <TextBlock Grid.Column="2" Text="API :" Style="{StaticResource CaptionText}"/>
+                                    <TextBox Grid.Column="3" Text="8728" Margin="5,0"/>
+                                </Grid>
+                                <Grid Margin="0,8,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="105"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="165"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="اسم الدخول :" Style="{StaticResource CaptionText}"/>
+                                    <TextBox Grid.Column="1" Text="admin" Margin="5,0,10,0"/>
+                                    <CheckBox Grid.Column="2" Content="API-SSL"
+                                              VerticalAlignment="Center"/>
+                                </Grid>
+                                <Grid Margin="0,8,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="105"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="165"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="كلمة المرور :" Style="{StaticResource CaptionText}"/>
+                                    <PasswordBox Grid.Column="1" Margin="5,0,10,0"/>
+                                    <CheckBox Grid.Column="2" Content="إظهار"
+                                              IsEnabled="False" VerticalAlignment="Center"/>
+                                </Grid>
+                                <DockPanel Margin="0,12,0,8">
+                                    <CheckBox Content="حفظ بيانات الدخول" DockPanel.Dock="Right"
+                                              IsEnabled="False"/>
+                                    <CheckBox Content="التحقق من شهادة SSL" DockPanel.Dock="Left"/>
+                                </DockPanel>
+                                <ComboBox IsEnabled="False" Height="35"
+                                          Background="White"
+                                          BorderBrush="{StaticResource SandBorder}"/>
+                                <Button Content="⌄ محفوظات الاتصالات" Height="32"
+                                        IsEnabled="False" Margin="0,5,0,0"/>
+                                <TextBlock Text="أدخل منفذ API الخارجي من مزود الرابط. منفذ WinBox داخل الرابط لا يُستخدم تلقائياً."
+                                           TextWrapping="Wrap"
+                                           Foreground="{StaticResource TextMuted}"
+                                           Margin="0,9,0,6" FontSize="13"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Button Content="تسجيل الدخول" Height="48" Margin="0,13,0,0"
+                                Style="{StaticResource NavyReplacementButton}"
+                                IsEnabled="False"/>
+                        <TextBlock Text="هذه واجهة تطوير مرئية؛ الاتصال والتراخيص مؤجلان حتى اكتمال نقل المنطق واختباراته."
+                                   Foreground="#A0283E" FontSize="13"
+                                   TextWrapping="Wrap" TextAlignment="Center" Margin="5,9"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <!-- Original right navigation column, navy replaced with glossy red -->
+            <Border Grid.Column="2" Margin="0,10,0,10" Background="{StaticResource GlossyRed}">
+                <DockPanel FlowDirection="RightToLeft">
+                    <Border DockPanel.Dock="Top" Background="#C9A263" Height="5"/>
+                    <TextBlock DockPanel.Dock="Bottom" Text="v1.1.3"
+                               Foreground="#F6DCAB" FontSize="14"
+                               TextAlignment="Center" FontWeight="Bold"
+                               Margin="0,12,0,20"/>
+                    <StackPanel Margin="0,12">
+                        <TextBlock Text="حضرموت" Foreground="#F6DCAB"
+                                   FontSize="28" FontWeight="Bold" TextAlignment="Center"
+                                   Margin="0,5,0,4"/>
+                        <TextBlock Text="القائمة الرئيسية" Foreground="#FFF2EC"
+                                   FontSize="15" TextAlignment="Center" Margin="0,0,0,18"/>
+                        <Border Height="1" Margin="12,0,12,10" Background="#E58D9B"/>
+                        <Button Content="تسجيل الدخول" Style="{StaticResource SidebarButton}" IsEnabled="False"/>
+                        <Button Content="الترخيص" Style="{StaticResource SidebarButton}" IsEnabled="False"/>
+                        <Button Content="حول البرنامج" Style="{StaticResource SidebarButton}" IsEnabled="False"/>
+                        <Button Content="خدمة العملاء" Style="{StaticResource SidebarButton}" IsEnabled="False"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </Viewbox>
+</Window>
