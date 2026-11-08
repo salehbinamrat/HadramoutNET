@@ -28,11 +28,11 @@ jobs:
           foreach ($item in $manifest.verified) {
             $path = "reference/python-v1.1.3/$($item.path)"
             if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing source reference: $path" }
-            $actual = (git hash-object -- $path).Trim()
+            $actual = (git rev-parse "HEAD:$path").Trim()
             if ($actual -ne $item.blob_sha) { throw "Source modified: $path" }
           }
           Write-Host "Verified $($manifest.verified.Count) original Git blobs."
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
           architecture: x64
@@ -59,7 +59,7 @@ jobs:
         arch: [x86, x64]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
           architecture: ${{ matrix.arch }}
