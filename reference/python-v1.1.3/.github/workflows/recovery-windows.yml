@@ -1,0 +1,154 @@
+name: Hadramout recovery and Windows gates
+
+on:
+  push:
+    branches: [recovery/v1.1.3-x64]
+    paths:
+      - Hadramout_v1.1.3_recovered_sources.zip
+      - app.py
+      - core/**
+      - ui/**
+      - assets/**
+      - tests/**
+      - scripts/build_windows.py
+      - installer/**
+      - requirements-build.txt
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  restore:
+    name: Import verified recovery ZIP
+    runs-on: ubuntu-latest
+    outputs:
+      checkout_sha: ${{ steps.capture.outputs.sha }}
+    permissions:
+      contents: write
+    if: ${{ github.event_name == 'push' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: recovery/v1.1.3-x64
+      - name: Validate and import only when archive is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f Hadramout_v1.1.3_recovered_sources.zip ]]; then
+            echo "No ZIP in this commit; repository sources will be tested unchanged."
+            exit 0
+          fi
+          python scripts/import_recovered_zip.py Hadramout_v1.1.3_recovered_sources.zip --destination .
+          git add -- app.py core ui assets
+          git rm -f -- Hadramout_v1.1.3_recovered_sources.zip
+          if ! git diff --cached --quiet; then
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'recovery: import verified v1.1.3 source snapshot'
+            git push origin HEAD:recovery/v1.1.3-x64
+          fi
+      - name: Pin branch commit for all Windows jobs
+        id: capture
+        shell: bash
+        run: |
+          git fetch origin recovery/v1.1.3-x64
+          echo "sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
+
+  windows-core:
+    name: Windows Core
+    needs: restore
+    if: ${{ always() && (needs.restore.result == 'success' || needs.restore.result == 'skipped') }}
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.restore.outputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          architecture: x64
+      - name: Install runtime requirements before tests
+        run: python -m pip install -r requirements.in
+      - name: Syntax and structural smoke tests
+        run: python -m unittest discover -s tests -v
+
+  windows-release:
+    name: Windows Release tests (${{ matrix.arch }})
+    needs: restore
+    if: ${{ always() && (needs.restore.result == 'success' || needs.restore.result == 'skipped') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86, x64]
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.restore.outputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          architecture: ${{ matrix.arch }}
+      - name: Install runtime requirements before tests
+        run: python -m pip install -r requirements.in
+      - name: Test source before packaging
+        env:
+          HADRAMOUT_TEST_LIVE_LICENSE: '1'
+        run: python -m unittest discover -s tests -v
+
+  packages:
+    name: Windows packages (${{ matrix.arch }})
+    needs: [restore, windows-core, windows-release]
+    if: ${{ always() && (needs.restore.result == 'success' || needs.restore.result == 'skipped') && needs['windows-core'].result == 'success' && needs['windows-release'].result == 'success' }}
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86, x64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.restore.outputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          architecture: ${{ matrix.arch }}
+      - name: Require real packaging implementation
+        shell: pwsh
+        run: |
+          if (!(Test-Path scripts/build_windows.py)) {
+            throw 'BLOCKED: original Windows packaging definition is not restored. No false Portable/Installer releases are allowed.'
+          }
+      - name: Install verified packager and runtime dependencies
+        run: python -m pip install -r requirements.in -r requirements-build.txt
+      - name: Ensure Inno Setup 6 compiler is available
+        shell: pwsh
+        run: |
+          if (!(Get-Command ISCC.exe -ErrorAction SilentlyContinue)) {
+            choco install innosetup --yes --no-progress
+          }
+      - name: Build Portable and Installer
+        run: python scripts/build_windows.py --arch ${{ matrix.arch }} --version 1.1.3 --output dist
+      - name: Verify both artifacts and write SHA-256
+        shell: pwsh
+        run: |
+          $arch = '${{ matrix.arch }}'
+          $portable = "dist/Hadramout-v1.1.3-$arch-Portable.zip"
+          $installer = "dist/Hadramout-v1.1.3-$arch-Installer.exe"
+          $lines = @()
+          foreach ($item in @($portable, $installer)) {
+            if (!(Test-Path $item)) { throw "Missing output: $item" }
+            $hash = (Get-FileHash -Algorithm SHA256 -Path $item).Hash.ToLowerInvariant()
+            $name = Split-Path -Path $item -Leaf
+            $lines += "$hash  $name"
+          }
+          $lines | Set-Content -Path "dist/SHA256SUMS-$arch.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Hadramout-v1.1.3-${{ matrix.arch }}
+          path: |
+            dist/Hadramout-v1.1.3-${{ matrix.arch }}-Portable.zip
+            dist/Hadramout-v1.1.3-${{ matrix.arch }}-Installer.exe
+            dist/SHA256SUMS-${{ matrix.arch }}.txt
+          if-no-files-found: error

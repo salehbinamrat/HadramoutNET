@@ -1,0 +1,6 @@
+# Direct imports observed in the packaged v1.1.3 Python sources.
+# These are NOT the original pinned dependency versions.
+Pillow
+openpyxl
+qrcode
+reportlab
