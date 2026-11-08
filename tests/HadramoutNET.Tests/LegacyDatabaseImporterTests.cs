@@ -29,7 +29,8 @@ public sealed class LegacyDatabaseImporterTests
         db.Open();
         using var cmd = db.CreateCommand();
         cmd.CommandText = sql;
-        return cmd.ExecuteScalar();
+        object? result = cmd.ExecuteScalar();
+        return result is DBNull ? null : result;
     }
 
     private static void Fixture(string path, int version = 8, bool orphan = false)
@@ -58,7 +59,10 @@ public sealed class LegacyDatabaseImporterTests
             INSERT INTO router_presets VALUES(2,'hotspot','*1','day',9);
             """);
         if (orphan)
+        {
+            Exec(db, "PRAGMA foreign_keys=OFF");
             Exec(db, "INSERT INTO cards VALUES(12,999,'0002','orphan','p',0,NULL,NULL,NULL,NULL,0,'2026-11-08','CREATED',0,0,NULL,NULL,NULL,'hotspot',2)");
+        }
     }
 
     [Fact]
