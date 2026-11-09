@@ -1,4 +1,5 @@
 using System.IO;
+using HadramoutNET.Core.Data;
 using System.Text.RegularExpressions;
 
 namespace HadramoutNET.Core.RouterOS;
@@ -17,6 +18,13 @@ public sealed record SessionDisconnectResult(
 /// </summary>
 public sealed class RouterSessionDisconnect
 {
+    private readonly SessionMaintenanceJournal _journal;
+
+    public RouterSessionDisconnect(SessionMaintenanceJournal journal)
+    {
+        _journal = journal ?? throw new ArgumentNullException(nameof(journal));
+    }
+
     private static readonly Regex ExactId = new(
         @"^\*[0-9A-Fa-f]+$", RegexOptions.CultureInvariant);
 
@@ -47,6 +55,19 @@ public sealed class RouterSessionDisconnect
             return Denied("authorization_expired",
                 "انتهت صلاحية جلسة MikroTik؛ لم يُنفذ الفصل.");
 
+        // Durably register the operator's confirmed attempt BEFORE any
+        // RouterOS I/O. A local database failure blocks remote mutation.
+        long auditId;
+        try
+        {
+            auditId = _journal.Begin(session.Identity, session.Endpoint, selected);
+        }
+        catch (Exception)
+        {
+            return Denied("audit_unavailable",
+                "تعذر بدء سجل التدقيق المحلي؛ لم يُرسل أي أمر إلى الراوتر.");
+        }
+
         string printPath = selected.Service == "Hotspot"
             ? "/ip/hotspot/active/print" : "/ppp/active/print";
         string removePath = selected.Service == "Hotspot"
@@ -59,14 +80,17 @@ public sealed class RouterSessionDisconnect
                 printPath, IdentityFields, queries: ["?.id=" + selected.Id],
                 cancellationToken: cancellationToken).ConfigureAwait(false);
         }
-        catch (RouterOsTrapException)
+        catch (Exception)
         {
-            return Denied("preflight_unavailable",
-                "رفض الراوتر فحص الجلسة؛ لم يُرسل أمر فصل.");
+            // No remote write was attempted, so the event is rejected rather
+            // than uncertain. If the audit update fails, its "started" state
+            // remains visible after restart for manual reconciliation.
+            return Finish(auditId, "rejected", "preflight_unavailable",
+                "تعذر فحص الجلسة على الراوتر؛ لم يُرسل أمر فصل.");
         }
 
         if (current.Rows.Count != 1)
-            return Denied("stale_selection",
+            return Finish(auditId, "rejected", "stale_selection",
                 "اختفت الجلسة أو تغيّرت؛ حدّث القائمة قبل أي إجراء.");
 
         var row = current.Rows[0];
@@ -76,32 +100,63 @@ public sealed class RouterSessionDisconnect
         if (!string.Equals(id, selected.Id, StringComparison.Ordinal) ||
             !string.Equals(user, selected.Username, StringComparison.Ordinal) ||
             !string.Equals(address, selected.Address, StringComparison.Ordinal))
-            return Denied("stale_selection",
+            return Finish(auditId, "rejected", "stale_selection",
                 "لم تعد هوية الجلسة مطابقة لعرضها السابق؛ لم تُفصل.");
 
         if (!session.HasCurrentAccess)
-            return Denied("authorization_expired",
-                "انتهت الصلاحية قبل الإرسال؛ لم يُنفذ الفصل.");
+            return Finish(auditId, "rejected", "authorization_expired",
+                "انتهت صلاحية الجلسة قبل الإرسال؛ لم يُنفذ الفصل.");
 
-        // Anything after entering this call may have reached the router.
-        // A timeout, closed socket or cancelled wait is therefore UNCERTAIN.
-        // Never retry or substitute a username-based removal.
+        try
+        {
+            // Commit the "may have been dispatched" state BEFORE making the
+            // remote call. A crash or lost ACK must not erase this evidence.
+            _journal.MarkDispatching(auditId);
+        }
+        catch (Exception)
+        {
+            return Denied("audit_unavailable",
+                "تعذر حفظ مرحلة الإرسال في سجل التدقيق؛ لم يُرسل أمر فصل.");
+        }
+
+        // Anything after entering the remote-call boundary may have reached
+        // the router. No automatic retry, delete-by-name or silent rollback.
         try
         {
             await session.ExecuteMaintenanceDisconnectAsync(
                 removePath, selected.Id, cancellationToken).ConfigureAwait(false);
-            return new SessionDisconnectResult(true, false, "accepted",
-                "قبل الراوتر طلب فصل جلسة واحدة. حدّث القائمة للتحقق من انتهائها.");
+            return Finish(auditId, "accepted", "router_ack",
+                "قبل الراوتر طلب فصل جلسة واحدة. حدّث القائمة للتحقق من انتهائها.",
+                success: true);
         }
         catch (RouterOsTrapException)
         {
-            return Denied("router_rejected",
+            return Finish(auditId, "rejected", "router_rejected",
                 "رفض الراوتر فصل الجلسة؛ لم تُعد المحاولة.");
         }
         catch (Exception)
         {
-            return new SessionDisconnectResult(false, true, "delivery_uncertain",
-                "قد يكون أمر الفصل وصل للراوتر قبل انقطاع الاستجابة. لا تعِد الإرسال؛ حدّث القائمة وتحقق يدويا.");
+            return Finish(auditId, "uncertain", "delivery_uncertain",
+                "قد يكون أمر الفصل وصل للراوتر قبل انقطاع الاستجابة. لا تعِد الإرسال؛ حدّث القائمة وتحقق يدويا.",
+                uncertain: true);
+        }
+    }
+
+    private SessionDisconnectResult Finish(
+        long auditId, string state, string reason, string message,
+        bool success = false, bool uncertain = false)
+    {
+        try
+        {
+            _journal.Complete(auditId, state, reason);
+            return new SessionDisconnectResult(success, uncertain, reason, message);
+        }
+        catch (Exception)
+        {
+            // The durable entry remains "started" or "dispatching".
+            // A remote command might already have been sent, so never retry.
+            return new SessionDisconnectResult(false, true, "audit_unavailable",
+                "تعذر حفظ نتيجة الفصل؛ العملية تتطلب مراجعة سجل التدقيق والجلسات يدويا دون إعادة تلقائية.");
         }
     }
 
