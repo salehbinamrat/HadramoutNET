@@ -102,6 +102,79 @@ public sealed class UserManagerLifecycleReaderTests
         await server;
     }
 
+    [Fact]
+    public async Task V7_missing_projected_profile_state_uses_one_count_verified_full_read()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var server = Task.Run(async () =>
+        {
+            using var peer = await listener.AcceptTcpClientAsync(timeout.Token);
+            using var stream = peer.GetStream();
+            await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
+            await Reply(stream, "!done");
+            await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
+            await Reply(stream, "!re", "=name=Router");
+            await Reply(stream, "!done");
+
+            var probe = await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
+            Assert.Contains("/user-manager/profile/print", probe);
+            await Reply(stream, "!re", "=name=weekly");
+            await Reply(stream, "!done");
+
+            var usersCount = await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
+            Assert.Contains("/user-manager/user/print", usersCount);
+            Assert.Contains("=count-only=yes", usersCount);
+            await Reply(stream, "!done", "=ret=1");
+            var users = await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
+            Assert.Contains("=.proplist=.id,name,disabled,transfer-limit,total-download-used,total-upload-used,download-used,upload-used", users);
+            await Reply(stream, "!re", "=.id=*1", "=name=card", "=disabled=no");
+            await Reply(stream, "!done");
+
+            var projectedCount = await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
+            Assert.Contains("/user-manager/user-profile/print", projectedCount);
+            Assert.Contains("=count-only=yes", projectedCount);
+            await Reply(stream, "!done", "=ret=1");
+            var projected = await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
+            Assert.Contains("=.proplist=user,state", projected);
+            await Reply(stream, "!re", "=user=card");
+            await Reply(stream, "!done");
+
+            var fallbackCount = await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
+            Assert.Contains("/user-manager/user-profile/print", fallbackCount);
+            Assert.Contains("=count-only=yes", fallbackCount);
+            await Reply(stream, "!done", "=ret=1");
+            var full = await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
+            Assert.Contains("/user-manager/user-profile/print", full);
+            Assert.DoesNotContain(full, word =>
+                word.StartsWith("=.proplist=", StringComparison.Ordinal));
+            await Reply(stream, "!re", "=user=card", "=state=running active",
+                "=unexpected-private-value=discard-me");
+            await Reply(stream, "!done");
+            await AssertIdle(stream);
+        }, timeout.Token);
+
+        var loginCoordinator = RouterLoginCoordinator.CreateForTests(
+            () => new LicenseAccess("active", "Valid", "online_valid",
+                "0123456789ABCDEF0123456789ABCDEF"),
+            () => new TrialAccess("locked", "expired", "expired", 0),
+            () => new TrialAccess("locked", "expired", "expired", 0));
+        var login = await loginCoordinator.LoginAsync(
+            new RouterLoginRequest("127.0.0.1", port.ToString(), "tester", "pwd"),
+            Now, timeout.Token);
+        Assert.True(login.Success);
+        await using var session = login.Session!;
+        var result = await new UserManagerLifecycleReader()
+            .ReadAsync(session, timeout.Token);
+        Assert.True(result.Ready);
+        Assert.Equal(1, result.Snapshot!.Active);
+        Assert.Equal(0, result.Snapshot.Expired);
+        await session.DisposeAsync();
+        await server;
+    }
+
     private static Task Reply(NetworkStream stream, params string[] words) =>
         stream.WriteAsync(RouterOsSentenceCodec.Encode(words)).AsTask();
 
