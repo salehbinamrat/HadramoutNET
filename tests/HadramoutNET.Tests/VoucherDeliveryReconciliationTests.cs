@@ -143,7 +143,8 @@ public sealed class VoucherDeliveryReconciliationTests
             }));
         Assert.Throws<InvalidOperationException>(() => journal.AppendVerification(
             hotspot, "Router", "10.0.0.1:8728", 7, summary));
-        Assert.Throws<ArgumentException>(() => journal.AppendVerification(
+        // A well-formed count for the wrong batch size is rejected atomically.
+        Assert.Throws<InvalidOperationException>(() => journal.AppendVerification(
             uncertain, "Router", "10.0.0.1:8728", 7, new Dictionary<string, int> {
                 ["profile_active"] = 1
             }));
