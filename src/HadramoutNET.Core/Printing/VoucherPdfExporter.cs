@@ -176,7 +176,7 @@ public static class VoucherPdfExporter
         try
         {
             g.IntersectClip(new XRect(x, y, width, height));
-            if (mode == "fill")
+            if (mode is "fill" or "crop")
             {
                 double w = width, h = width / ratio;
                 if (h < height) { h = height; w = height * ratio; }
