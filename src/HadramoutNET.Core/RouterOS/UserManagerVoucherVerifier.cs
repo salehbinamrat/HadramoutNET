@@ -70,10 +70,11 @@ public sealed class UserManagerVoucherVerifier
                 "not_installed" : "unavailable");
 
         // A partial projection must not be misreported as absent users.
-        if (catalog.Users.Count > MaxRows ||
-            catalog.Users.Select(x => x.Username).Distinct(StringComparer.Ordinal).Count() !=
-            catalog.Users.Count)
+        if (catalog.Users.Count > MaxRows)
             return Unavailable("limit_exceeded");
+        if (catalog.Users.Select(x => x.Username).Distinct(StringComparer.Ordinal).Count() !=
+            catalog.Users.Count)
+            return Unavailable("incomplete");
 
         string userPath = catalog.Version == 7 ?
             "/user-manager/user/print" : "/tool/user-manager/user/print";
