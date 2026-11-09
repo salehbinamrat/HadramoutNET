@@ -124,7 +124,7 @@ public static class CardArtPresetCodec
             !ValidHexColor(options.UsernameColor) ||
             !ValidHexColor(options.BorderColor))
             throw new PrintLayoutException("حجم أو لون الخط أو الإطار غير صالح.");
-        if (options.BackgroundMode is not ("stretch" or "fit" or "fill" or "tile"))
+        if (options.BackgroundMode is not ("stretch" or "fit" or "fill" or "crop" or "tile"))
             throw new PrintLayoutException("وضع صورة خلفية الكرت غير مدعوم.");
         _ = CardBackgroundAsset.Decode(options.BackgroundData);
         if (options.QrMode is not ("username" or "credentials" or "login_url"))
