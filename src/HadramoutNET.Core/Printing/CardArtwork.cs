@@ -32,7 +32,14 @@ public sealed record CardArtOptions(
     double QrSizeMm = 6.0,
     IReadOnlyDictionary<string, CardArtPoint>? Positions = null,
     string? BackgroundData = null,
-    string BackgroundMode = "stretch");
+    string BackgroundMode = "stretch",
+    double FontSize = 14,
+    bool FontBold = true,
+    string FontColor = "#7D0F24",
+    string UsernameColor = "#17110B",
+    string BorderColor = "#C59F63",
+    double BorderWidth = 1,
+    double BorderRadius = 0);
 
 public sealed record CardArtText(
     string Key, string Value, double X, double Y, double Width,
@@ -43,7 +50,8 @@ public sealed record CardArtQr(double X, double Y, double Size,
 
 public sealed record CardArtScene(
     double Width, double Height, string Background, string Accent,
-    string Border, IReadOnlyList<CardArtText> Texts, CardArtQr? Qr);
+    string Border, IReadOnlyList<CardArtText> Texts, CardArtQr? Qr,
+    double BorderWidthMm = 0.18, double BorderRadiusMm = 0);
 
 /// <summary>
 /// One pure model of card artwork for BOTH PDF and Windows preview/printing.
@@ -81,6 +89,21 @@ public static class CardArtwork
             throw new PrintLayoutException("اسم المستخدم أو كلمة المرور غير صالح للطباعة.");
         if (!double.IsFinite(options.QrSizeMm) || options.QrSizeMm is < 1 or > 300)
             throw new PrintLayoutException("حجم QR غير صالح.");
+        if (!double.IsFinite(options.FontSize) ||
+            options.FontSize is < 1 or > 300 ||
+            !double.IsFinite(options.BorderWidth) ||
+            options.BorderWidth is < 0 or > 100 ||
+            !double.IsFinite(options.BorderRadius) ||
+            options.BorderRadius is < 0 or > 100 ||
+            !CardArtPresetCodec.ValidHexColor(options.FontColor) ||
+            !CardArtPresetCodec.ValidHexColor(options.UsernameColor) ||
+            !CardArtPresetCodec.ValidHexColor(options.BorderColor))
+            throw new PrintLayoutException("إعداد خط أو إطار تصميم الكرت غير صالح.");
+        double borderWidthMm = options.BorderWidth * widthMm / 280.0;
+        double borderRadiusMm = options.BorderRadius * widthMm / 280.0;
+        if (borderWidthMm > Math.Min(widthMm, heightMm) / 2.0 ||
+            borderRadiusMm > Math.Min(widthMm, heightMm) / 2.0)
+            throw new PrintLayoutException("حجم إطار الكرت يتجاوز المساحة المتاحة.");
 
         var positions = OriginalPositions.ToDictionary(
             item => item.Key, item => item.Value, StringComparer.Ordinal);
@@ -98,12 +121,13 @@ public static class CardArtwork
         // 14px at 280px reference width -> about 7pt at 50mm, with a 1.35x
         // credential emphasis as in core/render.py. PDF and WPF use the same
         // physical point sizes from this scene, rather than separate styles.
-        double basePt = Math.Clamp(14 * (widthMm / 50) * 0.51, 4.0, 32.0);
+        double basePt = Math.Clamp(options.FontSize * (widthMm / 50) * 0.51,
+            1.0, 160.0);
         double bigPt = basePt * 1.35;
         double smallPt = basePt * 0.75;
 
         void Add(string key, string value, bool enabled, double fontPt,
-            string color, bool required = false)
+            string color, bool required = false, bool bold = true)
         {
             if (!enabled || string.IsNullOrEmpty(value)) return;
             if (value.Length > 256 || value.Any(char.IsControl))
@@ -123,14 +147,16 @@ public static class CardArtwork
             if (required && actualHeight < height - 0.01)
                 throw new PrintLayoutException("بيانات الدخول خارج حدود الكرت.");
             texts.Add(new CardArtText(key, value, x, y, actualWidth,
-                actualHeight, fontPt, color, true));
+                actualHeight, fontPt, color, bold));
         }
 
-        Add("title", options.Title, options.ShowTitle, bigPt, "#7D0F24");
-        Add("sequence", "#" + card.Sequence, options.ShowSequence, smallPt, "#7D0F24");
-        Add("username", card.Username, true, bigPt, "#17110B", required: true);
-        Add("password", card.Password, card.Password.Length != 0, bigPt, "#17110B",
-            required: true);
+        Add("title", options.Title, options.ShowTitle, bigPt, options.FontColor);
+        Add("sequence", "#" + card.Sequence, options.ShowSequence, smallPt,
+            options.FontColor, bold: false);
+        Add("username", card.Username, true, bigPt,
+            options.UsernameColor, required: true);
+        Add("password", card.Password, card.Password.Length != 0, bigPt,
+            options.UsernameColor, required: true);
         // Python render.py uses the individual card's price, bytes,
         // uptime, validity and generation date. An explicitly edited label
         // takes precedence only when the operator supplied one.
@@ -144,14 +170,20 @@ public static class CardArtwork
             card.ValidityDays.ToString(CultureInfo.InvariantCulture) + " يوم" : options.Validity;
         string date = string.IsNullOrEmpty(options.Date) ?
             (card.CreatedAt ?? "").Split('T', ' ')[0] : options.Date;
-        Add("price", price, options.ShowPrice, bigPt, "#7D0F24");
-        Add("capacity", capacity, options.ShowCapacity, basePt, "#7D0F24");
-        Add("duration", duration, options.ShowDuration, basePt, "#7D0F24");
-        Add("validity", validity, options.ShowValidity, basePt, "#7D0F24");
-        Add("date", date, options.ShowDate, smallPt, "#7D0F24");
-        Add("phone", options.Phone, options.ShowPhone, smallPt, "#7D0F24");
-        Add("other", options.Other, options.ShowOther, smallPt, "#7D0F24");
-        Add("other2", options.Other2, options.ShowOther2, smallPt, "#7D0F24");
+        Add("price", price, options.ShowPrice, bigPt, options.FontColor);
+        Add("capacity", capacity, options.ShowCapacity, basePt, options.FontColor,
+            bold: options.FontBold);
+        Add("duration", duration, options.ShowDuration, basePt, options.FontColor,
+            bold: options.FontBold);
+        Add("validity", validity, options.ShowValidity, basePt, options.FontColor,
+            bold: options.FontBold);
+        Add("date", date, options.ShowDate, smallPt, options.FontColor, bold: false);
+        Add("phone", options.Phone, options.ShowPhone, smallPt, options.FontColor,
+            bold: false);
+        Add("other", options.Other, options.ShowOther, smallPt, options.FontColor,
+            bold: false);
+        Add("other2", options.Other2, options.ShowOther2, smallPt, options.FontColor,
+            bold: false);
 
         var user = texts.Single(t => t.Key == "username");
         CardArtText? password = texts.FirstOrDefault(t => t.Key == "password");
@@ -183,7 +215,7 @@ public static class CardArtwork
             qr = new CardArtQr(x, y, size, payload, modules);
         }
         return new CardArtScene(widthMm, heightMm, "#FFFAF1", "#7D0F24",
-            "#C59F63", texts, qr);
+            options.BorderColor, texts, qr, borderWidthMm, borderRadiusMm);
     }
 
     public static string QrPayload(CardArtOptions options, Voucher card)
