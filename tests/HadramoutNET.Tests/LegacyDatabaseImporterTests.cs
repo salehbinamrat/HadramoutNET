@@ -266,4 +266,51 @@ public sealed class LegacyDatabaseImporterTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Fact]
+    public void Imported_history_is_paginated_and_never_returns_card_passwords()
+    {
+        string root = NewFolder();
+        try
+        {
+            string source = Path.Combine(root, "nidi_cards.db");
+            string target = Path.Combine(root, "net", "hadramout-net.db");
+            Fixture(source);
+            new LegacyDatabaseImporter(target).Import(source);
+
+            var archive = new LegacyHistoryReader(target);
+            var first = archive.ReadPage(offset: 0, pageSize: 1);
+            Assert.True(first.Imported);
+            Assert.Equal(1, first.Total);
+            var card = Assert.Single(first.Cards);
+            Assert.Equal("00123", card.Username);
+            Assert.Equal("BT-5", card.Batch);
+            Assert.Equal("day", card.Profile);
+            Assert.Equal("hotspot", card.Service);
+            Assert.DoesNotContain("=password", first.ToString());
+
+            var next = archive.ReadPage(offset: 1, pageSize: 1);
+            Assert.Empty(next.Cards);
+            Assert.Equal(1, next.Total);
+            Assert.Throws<ArgumentOutOfRangeException>(() => archive.ReadPage(-1, 10));
+            Assert.Throws<ArgumentOutOfRangeException>(() => archive.ReadPage(0, 5000));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void Archive_without_import_returns_explicit_not_imported_state()
+    {
+        string root = NewFolder();
+        try
+        {
+            string target = Path.Combine(root, "net", "hadramout-net.db");
+            new PackageSettingsStore(target);
+            var page = new LegacyHistoryReader(target).ReadPage(0, 20);
+            Assert.False(page.Imported);
+            Assert.Empty(page.Cards);
+            Assert.Equal(0, page.Total);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
 }
