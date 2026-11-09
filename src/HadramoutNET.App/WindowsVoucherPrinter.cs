@@ -319,8 +319,14 @@ internal static class WindowsVoucherPrinter
                     if (qr.Modules[row, col])
                         squares.Children.Add(new RectangleGeometry(
                             new Rect(col, row, 1, 1)));
-            var drawing = new DrawingImage(
-                new GeometryDrawing(Brushes.Black, null, squares));
+            // Preserve the full QR module matrix INCLUDING the white quiet
+            // zone. GeometryDrawing alone crops to dark-module bounds and
+            // could distort the encoded data when the image is stretched.
+            var group = new DrawingGroup();
+            group.Children.Add(new GeometryDrawing(Brushes.White, null,
+                new RectangleGeometry(new Rect(0, 0, count, count))));
+            group.Children.Add(new GeometryDrawing(Brushes.Black, null, squares));
+            var drawing = new DrawingImage(group);
             drawing.Freeze();
             var image = new Image
             {
