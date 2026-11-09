@@ -63,6 +63,10 @@ public sealed class UserManagerVoucherVerificationTests
             foreach (string username in new[] { "one", "two", "three", "four", "five" })
                 await Reply(stream, "!re", "=name=" + username, "=disabled=no");
             await Reply(stream, "!done");
+            var userCount = await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
+            Assert.Contains("/user-manager/user/print", userCount);
+            Assert.Contains("=count-only=yes", userCount);
+            await Reply(stream, "!done", "=ret=5");
             var count = await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
             Assert.Contains("/user-manager/user-profile/print", count);
             Assert.Contains("=count-only=yes", count);
@@ -113,6 +117,10 @@ public sealed class UserManagerVoucherVerificationTests
             await Reply(stream, "!re", "=username=c", "=actual-profile=other", "=disabled=no");
             await Reply(stream, "!re", "=username=d", "=disabled=no");
             await Reply(stream, "!done");
+            var userCount = await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
+            Assert.Contains("/tool/user-manager/user/print", userCount);
+            Assert.Contains("=count-only=yes", userCount);
+            await Reply(stream, "!done", "=ret=4");
         });
         await using var session = await Connect(port, timeout.Token);
         var result = await new UserManagerVoucherVerifier().VerifyAsync(session,
@@ -140,7 +148,12 @@ public sealed class UserManagerVoucherVerificationTests
             await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
             await Reply(stream, "!re", "=name=a");
             await Reply(stream, "!done");
+            var userCount = await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
+            Assert.Contains("/user-manager/user/print", userCount);
+            Assert.Contains("=count-only=yes", userCount);
+            await Reply(stream, "!done", "=ret=1");
             var count = await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
+            Assert.Contains("/user-manager/user-profile/print", count);
             Assert.Contains("=count-only=yes", count);
             await Reply(stream, "!trap", "=message=not enough permissions");
             await Reply(stream, "!done");
