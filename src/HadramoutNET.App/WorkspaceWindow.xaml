@@ -450,6 +450,43 @@
                                     </DataGrid>
                                 </Grid>
                             </TabItem>
+                            <TabItem Header="حالة قاعدة User Manager">
+                                <Grid Margin="12">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <WrapPanel Grid.Row="0" Margin="4,0,4,10">
+                                        <Button x:Name="RefreshUmDatabaseButton"
+                                                Content="تحديث حالة القاعدة" Width="170" Height="36"
+                                                Margin="4" Click="RefreshUmDatabase_Click"/>
+                                    </WrapPanel>
+                                    <TextBlock x:Name="UmDatabaseNotice" Grid.Row="1"
+                                               Margin="5,4,5,14" TextWrapping="Wrap"
+                                               Text="قراءة حالة قاعدة User Manager من الراوتر فقط، دون تحسين أو تعديل أو إعادة تشغيل."/>
+                                    <WrapPanel Grid.Row="2" Margin="4,0,4,8">
+                                        <TextBlock Text="إصدار User Manager:" FontWeight="Bold"
+                                                   Foreground="{StaticResource DarkRed}"
+                                                   VerticalAlignment="Center" Margin="5"/>
+                                        <TextBlock x:Name="UmDatabaseVersionValue" Text="—"
+                                                   VerticalAlignment="Center" Margin="5"/>
+                                    </WrapPanel>
+                                    <WrapPanel Grid.Row="3" Margin="4,0,4,10">
+                                        <TextBlock Text="حجم قاعدة البيانات:" FontWeight="Bold"
+                                                   Foreground="{StaticResource DarkRed}"
+                                                   VerticalAlignment="Center" Margin="5"/>
+                                        <TextBlock x:Name="UmDatabaseSizeValue" Text="—"
+                                                   VerticalAlignment="Center" Margin="5,5,25,5"/>
+                                        <TextBlock Text="المساحة الحرة:" FontWeight="Bold"
+                                                   Foreground="{StaticResource DarkRed}"
+                                                   VerticalAlignment="Center" Margin="5"/>
+                                        <TextBlock x:Name="UmDatabaseFreeValue" Text="—"
+                                                   VerticalAlignment="Center" Margin="5"/>
+                                    </WrapPanel>
+                                </Grid>
+                            </TabItem>
                             <TabItem Header="الأجهزة المكتشفة">
                                 <Grid Margin="9">
                                     <Grid.RowDefinitions>
