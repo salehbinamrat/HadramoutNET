@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using HadramoutNET.Core.Licensing;
+using HadramoutNET.Core.Data;
 using HadramoutNET.Core.RouterOS;
 using Xunit;
 
@@ -38,6 +39,23 @@ public sealed class RouterSessionDisconnectTests
     private static readonly NetworkActiveSession Selected =
         new("*A", "Hotspot", "voucher-001", "10.0.0.12");
 
+    private sealed class TestJournal : IDisposable
+    {
+        private readonly string _dir = Path.Combine(
+            Path.GetTempPath(), "hnet-disconnect-test-" + Guid.NewGuid().ToString("N"));
+        public SessionMaintenanceJournal Journal { get; }
+
+        public TestJournal()
+        {
+            Directory.CreateDirectory(_dir);
+            Journal = new SessionMaintenanceJournal(Path.Combine(_dir, "hadramout-net.db"));
+        }
+
+        public void Dispose() => Directory.Delete(_dir, recursive: true);
+    }
+
+
+
     private static async Task NoMoreCommands(NetworkStream stream)
     {
         var one = new byte[1];
@@ -61,11 +79,13 @@ public sealed class RouterSessionDisconnectTests
             await NoMoreCommands(stream);
         }, timeout.Token);
         await using var session = await Connect(port, timeout.Token);
-        var result = await new RouterSessionDisconnect().DisconnectAsync(
+        using var audit = new TestJournal();
+        var result = await new RouterSessionDisconnect(audit.Journal).DisconnectAsync(
             session, Selected, confirmed: false, timeout.Token);
         Assert.False(result.Success);
         Assert.False(result.Uncertain);
         Assert.Equal("confirmation_required", result.Reason);
+        Assert.Empty(audit.Journal.ReadRecent());
         await session.DisposeAsync();
         await peer;
     }
@@ -91,11 +111,13 @@ public sealed class RouterSessionDisconnectTests
             await NoMoreCommands(stream);
         }, timeout.Token);
         await using var session = await Connect(port, timeout.Token);
-        var result = await new RouterSessionDisconnect().DisconnectAsync(
+        using var audit = new TestJournal();
+        var result = await new RouterSessionDisconnect(audit.Journal).DisconnectAsync(
             session, Selected, confirmed: true, timeout.Token);
         Assert.False(result.Success);
         Assert.False(result.Uncertain);
         Assert.Equal("stale_selection", result.Reason);
+        Assert.Equal("rejected", Assert.Single(audit.Journal.ReadRecent()).State);
         await session.DisposeAsync();
         await peer;
     }
@@ -124,11 +146,13 @@ public sealed class RouterSessionDisconnectTests
             await NoMoreCommands(stream);
         }, timeout.Token);
         await using var session = await Connect(port, timeout.Token);
-        var result = await new RouterSessionDisconnect().DisconnectAsync(
+        using var audit = new TestJournal();
+        var result = await new RouterSessionDisconnect(audit.Journal).DisconnectAsync(
             session, Selected, confirmed: true, timeout.Token);
         Assert.True(result.Success);
         Assert.False(result.Uncertain);
         Assert.Equal("accepted", result.Reason);
+        Assert.Equal("accepted", Assert.Single(audit.Journal.ReadRecent()).State);
         await session.DisposeAsync();
         await peer;
     }
@@ -157,11 +181,15 @@ public sealed class RouterSessionDisconnectTests
         }, timeout.Token);
         await using var session = await Connect(port, timeout.Token);
         var selected = new NetworkActiveSession("*B", "PPPoE", "ppp01", "10.0.0.22");
-        var result = await new RouterSessionDisconnect().DisconnectAsync(
+        using var audit = new TestJournal();
+        var result = await new RouterSessionDisconnect(audit.Journal).DisconnectAsync(
             session, selected, confirmed: true, timeout.Token);
         Assert.False(result.Success);
         Assert.True(result.Uncertain);
         Assert.Equal("delivery_uncertain", result.Reason);
+        var logged = Assert.Single(audit.Journal.ReadRecent());
+        Assert.Equal("uncertain", logged.State);
+        Assert.True(logged.RequiresManualReconciliation);
         await peer;
     }
 
@@ -187,12 +215,14 @@ public sealed class RouterSessionDisconnectTests
             await NoMoreCommands(stream);
         }, timeout.Token);
         await using var session = await Connect(port, timeout.Token);
-        var result = await new RouterSessionDisconnect().DisconnectAsync(
+        using var audit = new TestJournal();
+        var result = await new RouterSessionDisconnect(audit.Journal).DisconnectAsync(
             session, Selected, confirmed: true, timeout.Token);
         Assert.False(result.Success);
         Assert.False(result.Uncertain);
         Assert.Equal("router_rejected", result.Reason);
         Assert.DoesNotContain("secret", result.Message);
+        Assert.Equal("rejected", Assert.Single(audit.Journal.ReadRecent()).State);
         await session.DisposeAsync();
         await peer;
     }
@@ -212,11 +242,13 @@ public sealed class RouterSessionDisconnectTests
             await NoMoreCommands(stream);
         }, timeout.Token);
         await using var session = await Connect(port, timeout.Token);
-        var result = await new RouterSessionDisconnect().DisconnectAsync(
+        using var audit = new TestJournal();
+        var result = await new RouterSessionDisconnect(audit.Journal).DisconnectAsync(
             session, Selected with { Id = "invalid", Service = "Other" },
             confirmed: true, timeout.Token);
         Assert.False(result.Success);
         Assert.Equal("invalid_selection", result.Reason);
+        Assert.Empty(audit.Journal.ReadRecent());
         await session.DisposeAsync();
         await peer;
     }
