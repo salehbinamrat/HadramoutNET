@@ -1,0 +1,637 @@
+using System.Globalization;
+using System.Text.Json;
+using HadramoutNET.Core.Cards;
+using Microsoft.Data.Sqlite;
+
+namespace HadramoutNET.Core.Data;
+
+/// <summary>
+/// Metadata-only write-ahead record of a confirmed voucher upload attempt.
+/// No voucher usernames, passwords, license codes or RouterOS trap text are
+/// persisted. An interrupted attempt is NOT safe to replay automatically.
+/// </summary>
+public sealed record VoucherDeliveryAuditEntry(
+    long Id, string CreatedAtUtc, string RouterIdentity, string RouterEndpoint,
+    string Service, string Profile, int Attempted, int Added,
+    string State, string Reason)
+{
+    public bool RequiresManualReconciliation =>
+        State is "started" or "dispatching" or "partial" or "uncertain";
+
+    public string StateLabel => State switch
+    {
+        "started" => "بدأت العملية — النتيجة غير معروفة",
+        "dispatching" => "ربما أُرسلت كروت — يتطلب مراجعة",
+        "accepted" => "أقر الراوتر الرفع — ليس تحققاً مستقلاً",
+        "partial" => "رفع جزئي — يحتاج مراجعة",
+        "uncertain" => "تعذر التأكد من نتيجة الرفع",
+        "rejected" => "رفض أو فشل التحقق",
+        _ => "حالة غير معروفة"
+    };
+}
+
+/// <summary>
+/// Append-only read-only observations of an operator-supplied voucher list.
+/// Individual usernames, passwords and credentials are NEVER stored.
+/// These snapshots are not proof that a prior network mutation succeeded.
+/// </summary>
+public sealed record VoucherDeliveryCheck(
+    long Id, long AttemptId, string ObservedUtc, int Version,
+    IReadOnlyDictionary<string, int> Counts);
+
+/// <summary>Metadata-only, append-only Hotspot/PPPoE read observation.</summary>
+public sealed record VoucherDeliveryStandardCheck(
+    long Id, long AttemptId, string ObservedUtc, string Service,
+    IReadOnlyDictionary<string, int> Counts);
+
+/// <summary>
+/// Per-ordinal stage facts without storing card usernames or passwords.
+/// Acknowledged means RouterOS returned successful !done for that command,
+/// not independent verification of the resulting account or profile.
+/// </summary>
+public sealed record VoucherDeliveryUserManagerStage(
+    long Id, long AttemptId, int Ordinal, int Version,
+    string Stage, string State, string PreparedUtc, string? AcknowledgedUtc)
+{
+    public bool CanAssumeCompleted => State == "acknowledged";
+}
+
+/// <summary>
+/// Append-once attempt identifiers with irreversible, narrowly allowed
+/// transitions. Stored only in HadramoutNET's isolated SQLite database.
+/// </summary>
+public sealed class VoucherDeliveryJournal
+{
+    private static readonly HashSet<string> Reasons = new(StringComparer.Ordinal)
+    {
+        "published", "confirmation_required", "not_authorized",
+        "invalid_options", "invalid_count", "invalid_cards",
+        "duplicate_username", "profile_missing", "preflight_unavailable",
+        "customer_required", "customer_mismatch", "partial_failure",
+        "delivery_uncertain", "profile_assignment_uncertain", "unexpected_failure"
+    };
+
+    // Only these normalized result labels may enter the durable audit.
+/// Unknown RouterOS strings, raw errors and credentials are prohibited.
+    private static readonly HashSet<string> V6ObservationStates =
+        new(StringComparer.Ordinal) {
+            "not_found", "disabled", "profile_reported",
+            "profile_other", "profile_unverified"
+        };
+    private static readonly HashSet<string> V7ObservationStates =
+        new(StringComparer.Ordinal) {
+            "not_found", "disabled", "profile_active", "profile_ready",
+            "profile_used", "profile_other", "profile_missing", "profile_unverified"
+        };
+
+    private static readonly HashSet<string> StandardStates =
+        new(StringComparer.Ordinal)
+        {
+            "not_found", "disabled", "disabled_unknown", "profile_matches",
+            "profile_other", "profile_unknown", "service_other"
+        };
+
+    private readonly string _path;
+
+    public VoucherDeliveryJournal(string targetPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
+        _path = Path.GetFullPath(targetPath);
+        // Refuse legacy Python schemas, including a renamed Python database.
+        _ = new PackageSettingsStore(_path);
+        using var db = Open();
+        using var command = db.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE IF NOT EXISTS voucher_delivery_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_utc TEXT NOT NULL,
+                finished_utc TEXT,
+                router_identity TEXT NOT NULL,
+                router_endpoint TEXT NOT NULL,
+                service TEXT NOT NULL,
+                profile TEXT NOT NULL,
+                attempted INTEGER NOT NULL CHECK(attempted >= 1 AND attempted <= 10000),
+                added INTEGER NOT NULL DEFAULT 0 CHECK(added >= 0),
+                state TEXT NOT NULL CHECK(state IN
+                    ('started','dispatching','accepted','rejected','partial','uncertain')),
+                reason TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS ix_voucher_delivery_recent
+                ON voucher_delivery_audit(id DESC);
+            CREATE TABLE IF NOT EXISTS voucher_delivery_checks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                attempt_id INTEGER NOT NULL
+                    REFERENCES voucher_delivery_audit(id),
+                observed_utc TEXT NOT NULL,
+                version INTEGER NOT NULL CHECK(version IN (6,7)),
+                counts_json TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_voucher_delivery_checks_attempt
+                ON voucher_delivery_checks(attempt_id,id DESC);
+            CREATE TABLE IF NOT EXISTS voucher_delivery_standard_checks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                attempt_id INTEGER NOT NULL REFERENCES voucher_delivery_audit(id),
+                observed_utc TEXT NOT NULL,
+                service TEXT NOT NULL CHECK(service IN ('hotspot','ppp')),
+                counts_json TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_voucher_delivery_standard_checks_attempt
+                ON voucher_delivery_standard_checks(attempt_id,id DESC);
+            CREATE TABLE IF NOT EXISTS voucher_delivery_um_stages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                attempt_id INTEGER NOT NULL REFERENCES voucher_delivery_audit(id),
+                ordinal INTEGER NOT NULL CHECK(ordinal >= 1 AND ordinal <= 10000),
+                version INTEGER NOT NULL CHECK(version IN (6,7)),
+                stage TEXT NOT NULL CHECK(stage IN ('create_user','bind_profile')),
+                prepared_utc TEXT NOT NULL,
+                UNIQUE(attempt_id,ordinal,stage)
+            );
+            CREATE INDEX IF NOT EXISTS ix_um_stages_attempt
+                ON voucher_delivery_um_stages(attempt_id,id DESC);
+            CREATE TABLE IF NOT EXISTS voucher_delivery_um_stage_ack (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                stage_id INTEGER NOT NULL UNIQUE
+                    REFERENCES voucher_delivery_um_stages(id),
+                acknowledged_utc TEXT NOT NULL
+            );
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    public long Begin(string routerIdentity, string routerEndpoint, string service,
+        string profile, int attempted)
+    {
+        if (!Valid(routerIdentity, 160) || !Valid(routerEndpoint, 256) ||
+            service is not ("hotspot" or "ppp" or "userman") ||
+            !Valid(profile, 80))
+            throw new ArgumentException("هوية الراوتر أو الخدمة أو الباقة غير صالحة للتدقيق.");
+        if (attempted is < 1 or > VoucherGenerator.MaxBatchSize)
+            throw new ArgumentOutOfRangeException(nameof(attempted));
+
+        using var db = Open();
+        using var command = db.CreateCommand();
+        command.CommandText = """
+            INSERT INTO voucher_delivery_audit(
+                created_utc,router_identity,router_endpoint,service,profile,
+                attempted,added,state,reason)
+            VALUES ($time,$identity,$endpoint,$service,$profile,$attempted,
+                0,'started','');
+            SELECT last_insert_rowid();
+            """;
+        command.Parameters.AddWithValue("$time",
+            DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$identity", routerIdentity);
+        command.Parameters.AddWithValue("$endpoint", routerEndpoint);
+        command.Parameters.AddWithValue("$service", service);
+        command.Parameters.AddWithValue("$profile", profile);
+        command.Parameters.AddWithValue("$attempted", attempted);
+        return Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// This conservative marker is persisted BEFORE remote preflight or
+    /// mutation. On a process crash it is intentionally treated as possibly
+    /// dispatched, even if no write was actually sent.
+    /// </summary>
+    public void MarkDispatching(long id)
+    {
+        if (id <= 0) throw new ArgumentOutOfRangeException(nameof(id));
+        using var db = Open();
+        using var command = db.CreateCommand();
+        command.CommandText = """
+            UPDATE voucher_delivery_audit
+            SET state='dispatching' WHERE id=$id AND state='started'
+            """;
+        command.Parameters.AddWithValue("$id", id);
+        if (command.ExecuteNonQuery() != 1)
+            throw new InvalidOperationException("تعذر حفظ حالة إرسال الكروت قبل الرفع.");
+    }
+
+    public void Complete(long id, string state, string reason, int added)
+    {
+        if (id <= 0) throw new ArgumentOutOfRangeException(nameof(id));
+        if (state is not ("accepted" or "rejected" or "partial" or "uncertain"))
+            throw new ArgumentException("حالة الرفع غير مسموحة.", nameof(state));
+        if (string.IsNullOrEmpty(reason) || !Reasons.Contains(reason))
+            throw new ArgumentException("نتيجة الرفع يجب أن تكون رمزا معتمدا دون بيانات حساسة.",
+                nameof(reason));
+        if (added < 0 || added > VoucherGenerator.MaxBatchSize)
+            throw new ArgumentOutOfRangeException(nameof(added));
+
+        using var db = Open();
+        using var command = db.CreateCommand();
+        command.CommandText = """
+            UPDATE voucher_delivery_audit
+            SET state=$state,reason=$reason,added=$added,finished_utc=$time
+            WHERE id=$id AND state='dispatching' AND $added <= attempted
+            AND ($state != 'accepted' OR $added = attempted)
+            AND ($state != 'partial' OR ($added > 0 AND $added < attempted))
+            """;
+        command.Parameters.AddWithValue("$state", state);
+        command.Parameters.AddWithValue("$reason", reason);
+        command.Parameters.AddWithValue("$added", added);
+        command.Parameters.AddWithValue("$time",
+            DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$id", id);
+        if (command.ExecuteNonQuery() != 1)
+            throw new InvalidOperationException("لا يمكن تغيير نتيجة رفع مكتملة أو غير متطابقة.");
+    }
+
+    public IReadOnlyList<VoucherDeliveryAuditEntry> ReadRecent(int limit = 100)
+    {
+        if (limit is < 1 or > 500) throw new ArgumentOutOfRangeException(nameof(limit));
+        using var db = Open(readOnly: true);
+        using var command = db.CreateCommand();
+        command.CommandText = """
+            SELECT id,created_utc,router_identity,router_endpoint,
+                   service,profile,attempted,added,state,reason
+            FROM voucher_delivery_audit ORDER BY id DESC LIMIT $limit
+            """;
+        command.Parameters.AddWithValue("$limit", limit);
+        using var reader = command.ExecuteReader();
+        var rows = new List<VoucherDeliveryAuditEntry>();
+        while (reader.Read())
+            rows.Add(new VoucherDeliveryAuditEntry(
+                reader.GetInt64(0), reader.GetString(1), reader.GetString(2),
+                reader.GetString(3), reader.GetString(4), reader.GetString(5),
+                reader.GetInt32(6), reader.GetInt32(7), reader.GetString(8),
+                reader.GetString(9)));
+        return rows;
+    }
+
+    public IReadOnlyList<VoucherDeliveryAuditEntry> ReadUnresolved(
+        string routerIdentity, string routerEndpoint, int limit = 50)
+    {
+        if (limit is < 1 or > 500) throw new ArgumentOutOfRangeException(nameof(limit));
+        using var db = Open(readOnly: true);
+        using var command = db.CreateCommand();
+        command.CommandText = """
+            SELECT id,created_utc,router_identity,router_endpoint,
+                   service,profile,attempted,added,state,reason
+            FROM voucher_delivery_audit
+            WHERE router_identity=$identity AND router_endpoint=$endpoint
+              AND state IN ('started','dispatching','partial','uncertain')
+            ORDER BY id DESC LIMIT $limit
+            """;
+        command.Parameters.AddWithValue("$identity", routerIdentity);
+        command.Parameters.AddWithValue("$endpoint", routerEndpoint);
+        command.Parameters.AddWithValue("$limit", limit);
+        using var reader = command.ExecuteReader();
+        var rows = new List<VoucherDeliveryAuditEntry>();
+        while (reader.Read())
+            rows.Add(new VoucherDeliveryAuditEntry(
+                reader.GetInt64(0), reader.GetString(1), reader.GetString(2),
+                reader.GetString(3), reader.GetString(4), reader.GetString(5),
+                reader.GetInt32(6), reader.GetInt32(7), reader.GetString(8),
+                reader.GetString(9)));
+        return rows;
+    }
+
+
+    /// <summary>
+    /// Raw attempt metadata. Callers MUST verify RouterIdentity and
+    /// RouterEndpoint against the live session before any router read.
+    /// </summary>
+    public VoucherDeliveryAuditEntry? GetAttempt(long attemptId)
+    {
+        if (attemptId <= 0) return null;
+        using var db = Open(readOnly: true);
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            SELECT id,created_utc,router_identity,router_endpoint,
+                   service,profile,attempted,added,state,reason
+            FROM voucher_delivery_audit WHERE id=$id
+            """;
+        cmd.Parameters.AddWithValue("$id", attemptId);
+        using var reader = cmd.ExecuteReader();
+        return reader.Read() ? new VoucherDeliveryAuditEntry(
+            reader.GetInt64(0), reader.GetString(1), reader.GetString(2),
+            reader.GetString(3), reader.GetString(4), reader.GetString(5),
+            reader.GetInt32(6), reader.GetInt32(7), reader.GetString(8),
+            reader.GetString(9)) : null;
+    }
+
+    /// <summary>
+    /// Atomically append a factual observation only to an unresolved
+    /// User Manager attempt for this exact router and batch size.
+    /// Never alter the immutable upload outcome.
+    /// </summary>
+    public VoucherDeliveryCheck AppendVerification(
+        long attemptId, string routerIdentity, string routerEndpoint,
+        int version, IReadOnlyDictionary<string, int> counts)
+    {
+        if (attemptId <= 0) throw new ArgumentOutOfRangeException(nameof(attemptId));
+        if (!Valid(routerIdentity, 160) || !Valid(routerEndpoint, 256))
+            throw new ArgumentException("هوية الراوتر غير صالحة.");
+        ArgumentNullException.ThrowIfNull(counts);
+        if (version is not (6 or 7) || counts.Count == 0)
+            throw new ArgumentException("إصدار User Manager أو ملخص النتائج غير صالح.");
+
+        var allowed = version == 6 ? V6ObservationStates : V7ObservationStates;
+        long total = 0;
+        foreach (var item in counts)
+        {
+            if (!allowed.Contains(item.Key) || item.Value < 0)
+                throw new ArgumentException("الملخص يحتوي نتائج غير مسموح بحفظها.",
+                    nameof(counts));
+            total += item.Value;
+        }
+        if (total is < 1 or > 5000)
+            throw new ArgumentException("عدد نتائج الفحص غير صالح.", nameof(counts));
+        string payload = JsonSerializer.Serialize(counts);
+
+        using var db = Open();
+        using var command = db.CreateCommand();
+        command.CommandText = """
+            INSERT INTO voucher_delivery_checks(
+                attempt_id,observed_utc,version,counts_json)
+            SELECT id,$time,$version,$summary
+            FROM voucher_delivery_audit
+            WHERE id=$id AND router_identity=$identity
+              AND router_endpoint=$endpoint
+              AND service='userman' AND attempted=$count
+              AND state IN ('started','dispatching','partial','uncertain')
+            """;
+        command.Parameters.AddWithValue("$id", attemptId);
+        command.Parameters.AddWithValue("$identity", routerIdentity);
+        command.Parameters.AddWithValue("$endpoint", routerEndpoint);
+        command.Parameters.AddWithValue("$count", total);
+        string observedUtc = DateTimeOffset.UtcNow.ToString("O",
+            CultureInfo.InvariantCulture);
+        command.Parameters.AddWithValue("$time", observedUtc);
+        command.Parameters.AddWithValue("$version", version);
+        command.Parameters.AddWithValue("$summary", payload);
+        if (command.ExecuteNonQuery() != 1)
+            throw new InvalidOperationException(
+                "محاولة الرفع لا تتطابق مع الراوتر أو العدد أو ليست غير محسومة.");
+        command.Parameters.Clear();
+        command.CommandText = "SELECT last_insert_rowid()";
+        long id = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+        return new VoucherDeliveryCheck(id, attemptId, observedUtc,
+            version, counts.ToDictionary(item => item.Key, item => item.Value,
+                StringComparer.Ordinal));
+    }
+
+    public IReadOnlyList<VoucherDeliveryCheck> ReadChecks(long attemptId, int limit = 30)
+    {
+        if (attemptId <= 0) throw new ArgumentOutOfRangeException(nameof(attemptId));
+        if (limit is < 1 or > 200) throw new ArgumentOutOfRangeException(nameof(limit));
+        using var db = Open(readOnly: true);
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            SELECT id,attempt_id,observed_utc,version,counts_json
+            FROM voucher_delivery_checks
+            WHERE attempt_id=$id ORDER BY id DESC LIMIT $limit
+            """;
+        cmd.Parameters.AddWithValue("$id", attemptId);
+        cmd.Parameters.AddWithValue("$limit", limit);
+        using var reader = cmd.ExecuteReader();
+        var checks = new List<VoucherDeliveryCheck>();
+        while (reader.Read())
+        {
+            var counts = JsonSerializer.Deserialize<Dictionary<string, int>>(
+                reader.GetString(4)) ?? new Dictionary<string, int>();
+            checks.Add(new VoucherDeliveryCheck(
+                reader.GetInt64(0), reader.GetInt64(1), reader.GetString(2),
+                reader.GetInt32(3), counts));
+        }
+        return checks;
+    }
+
+    /// <summary>
+    /// A successful observation is not proof of any earlier write or login.
+    /// The original upload state is intentionally immutable and unresolved.
+    /// </summary>
+    public VoucherDeliveryStandardCheck AppendStandardVerification(
+        long attemptId, string routerIdentity, string routerEndpoint,
+        string service, IReadOnlyDictionary<string, int> counts)
+    {
+        if (attemptId <= 0) throw new ArgumentOutOfRangeException(nameof(attemptId));
+        if (!Valid(routerIdentity, 160) || !Valid(routerEndpoint, 256) ||
+            service is not ("hotspot" or "ppp"))
+            throw new ArgumentException("هوية الراوتر أو الخدمة غير صالحة.");
+        ArgumentNullException.ThrowIfNull(counts);
+        if (counts.Count == 0)
+            throw new ArgumentException("ملخص التحقق فارغ.", nameof(counts));
+        long total = 0;
+        foreach (var row in counts)
+        {
+            if (!StandardStates.Contains(row.Key) ||
+                (service == "hotspot" && row.Key == "service_other") ||
+                row.Value < 0)
+                throw new ArgumentException("ملخص النتائج يحتوي حالة غير مسموحة.",
+                    nameof(counts));
+            total += row.Value;
+        }
+        if (total is < 1 or > 5000)
+            throw new ArgumentException("عدد نتائج الفحص غير صالح.", nameof(counts));
+
+        string observedUtc = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+        using var db = Open();
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO voucher_delivery_standard_checks(
+                attempt_id, observed_utc, service, counts_json)
+            SELECT id,$time,$service,$counts FROM voucher_delivery_audit
+            WHERE id=$id AND router_identity=$identity AND router_endpoint=$endpoint
+              AND service=$service AND attempted=$total
+              AND state IN ('started','dispatching','partial','uncertain')
+            """;
+        cmd.Parameters.AddWithValue("$time", observedUtc);
+        cmd.Parameters.AddWithValue("$service", service);
+        cmd.Parameters.AddWithValue("$counts", JsonSerializer.Serialize(counts));
+        cmd.Parameters.AddWithValue("$id", attemptId);
+        cmd.Parameters.AddWithValue("$identity", routerIdentity);
+        cmd.Parameters.AddWithValue("$endpoint", routerEndpoint);
+        cmd.Parameters.AddWithValue("$total", total);
+        if (cmd.ExecuteNonQuery() != 1)
+            throw new InvalidOperationException(
+                "لا يمكن تسجيل فحص على محاولة خدمة أو راوتر أو عدد غير مطابق.");
+        cmd.Parameters.Clear();
+        cmd.CommandText = "SELECT last_insert_rowid()";
+        long id = Convert.ToInt64(cmd.ExecuteScalar(), CultureInfo.InvariantCulture);
+        return new VoucherDeliveryStandardCheck(id, attemptId, observedUtc,
+            service, counts.ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal));
+    }
+
+    public IReadOnlyList<VoucherDeliveryStandardCheck> ReadStandardChecks(
+        long attemptId, int limit = 30)
+    {
+        if (attemptId <= 0) throw new ArgumentOutOfRangeException(nameof(attemptId));
+        if (limit is < 1 or > 200) throw new ArgumentOutOfRangeException(nameof(limit));
+        using var db = Open(readOnly: true);
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            SELECT id,attempt_id,observed_utc,service,counts_json
+            FROM voucher_delivery_standard_checks
+            WHERE attempt_id=$id ORDER BY id DESC LIMIT $limit
+            """;
+        cmd.Parameters.AddWithValue("$id", attemptId);
+        cmd.Parameters.AddWithValue("$limit", limit);
+        using var reader = cmd.ExecuteReader();
+        var result = new List<VoucherDeliveryStandardCheck>();
+        while (reader.Read())
+        {
+            var counts = JsonSerializer.Deserialize<Dictionary<string,int>>(
+                reader.GetString(4)) ?? new Dictionary<string,int>();
+            result.Add(new VoucherDeliveryStandardCheck(
+                reader.GetInt64(0), reader.GetInt64(1), reader.GetString(2),
+                reader.GetString(3), counts));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// An immutable intent record must be committed BEFORE the corresponding
+    /// User Manager add/bind command is sent. Any failed insert stops writes.
+    /// No identities, passwords, returned IDs, or RouterOS errors are saved.
+    /// </summary>
+    public long PrepareUserManagerStage(
+        long attemptId, int ordinal, int version, string stage)
+    {
+        if (attemptId <= 0)
+            throw new ArgumentOutOfRangeException(nameof(attemptId));
+        if (ordinal < 1 || ordinal > VoucherGenerator.MaxBatchSize)
+            throw new ArgumentOutOfRangeException(nameof(ordinal));
+        if (version is not (6 or 7) || stage is not ("create_user" or "bind_profile"))
+            throw new ArgumentException("مرحلة User Manager أو إصداره غير مسموح.");
+
+        using var db = Open();
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO voucher_delivery_um_stages(
+                attempt_id,ordinal,version,stage,prepared_utc)
+            SELECT a.id,$ordinal,$version,$stage,$time
+            FROM voucher_delivery_audit AS a
+            WHERE a.id=$attempt AND a.service='userman'
+              AND a.state='dispatching' AND $ordinal<=a.attempted
+              AND NOT EXISTS(
+                SELECT 1 FROM voucher_delivery_um_stages AS pending
+                LEFT JOIN voucher_delivery_um_stage_ack AS receipt
+                  ON receipt.stage_id=pending.id
+                WHERE pending.attempt_id=a.id AND receipt.id IS NULL
+              )
+              AND NOT EXISTS(
+                SELECT 1 FROM voucher_delivery_um_stages AS prior
+                WHERE prior.attempt_id=a.id AND prior.ordinal=$ordinal
+                  AND prior.stage=$stage
+              )
+              AND (
+                ($stage='create_user' AND
+                    ($ordinal=1 OR EXISTS(
+                        SELECT 1 FROM voucher_delivery_um_stages AS previous
+                        JOIN voucher_delivery_um_stage_ack AS p_ack
+                          ON p_ack.stage_id=previous.id
+                        WHERE previous.attempt_id=a.id
+                          AND previous.ordinal=$ordinal-1
+                          AND previous.stage='bind_profile'
+                          AND previous.version=$version
+                    )))
+                OR
+                ($stage='bind_profile' AND EXISTS(
+                    SELECT 1 FROM voucher_delivery_um_stages AS created
+                    JOIN voucher_delivery_um_stage_ack AS c_ack
+                      ON c_ack.stage_id=created.id
+                    WHERE created.attempt_id=a.id
+                      AND created.ordinal=$ordinal
+                      AND created.stage='create_user'
+                      AND created.version=$version
+                ))
+              )
+              AND NOT EXISTS(
+                SELECT 1 FROM voucher_delivery_um_stages AS conflicting
+                WHERE conflicting.attempt_id=a.id
+                  AND conflicting.version!=$version
+              )
+            """;
+        cmd.Parameters.AddWithValue("$attempt", attemptId);
+        cmd.Parameters.AddWithValue("$ordinal", ordinal);
+        cmd.Parameters.AddWithValue("$version", version);
+        cmd.Parameters.AddWithValue("$stage", stage);
+        cmd.Parameters.AddWithValue("$time",
+            DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+        if (cmd.ExecuteNonQuery() != 1)
+            throw new InvalidOperationException(
+                "مرحلة User Manager غير متطابقة أو لم تُؤكد المرحلة السابقة.");
+        cmd.Parameters.Clear();
+        cmd.CommandText = "SELECT last_insert_rowid()";
+        return Convert.ToInt64(cmd.ExecuteScalar(), CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Store an acknowledgement only after a successful RouterOS !done.
+    /// Never rewrite or delete the preparation record. If this write fails,
+    /// the publisher must stop and report uncertainty, not advance to binding.
+    /// </summary>
+    public void AcknowledgeUserManagerStage(long stageId)
+    {
+        if (stageId <= 0)
+            throw new InvalidOperationException("معرف مرحلة User Manager غير صالح.");
+        using var db = Open();
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO voucher_delivery_um_stage_ack(stage_id,acknowledged_utc)
+            SELECT stage.id,$time
+            FROM voucher_delivery_um_stages AS stage
+            JOIN voucher_delivery_audit AS a ON a.id=stage.attempt_id
+            WHERE stage.id=$stage AND a.service='userman' AND a.state='dispatching'
+              AND NOT EXISTS(
+                SELECT 1 FROM voucher_delivery_um_stage_ack AS receipt
+                WHERE receipt.stage_id=stage.id
+              )
+            """;
+        cmd.Parameters.AddWithValue("$time",
+            DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+        cmd.Parameters.AddWithValue("$stage", stageId);
+        if (cmd.ExecuteNonQuery() != 1)
+            throw new InvalidOperationException(
+                "إقرار مرحلة User Manager مسجل مسبقا أو غير متاح.");
+    }
+
+    public IReadOnlyList<VoucherDeliveryUserManagerStage> ReadUserManagerStages(
+        long attemptId, int limit = 200)
+    {
+        if (attemptId <= 0) throw new ArgumentOutOfRangeException(nameof(attemptId));
+        if (limit is < 1 or > 2000) throw new ArgumentOutOfRangeException(nameof(limit));
+        using var db = Open(readOnly: true);
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            SELECT s.id,s.attempt_id,s.ordinal,s.version,s.stage,
+                s.prepared_utc,a.acknowledged_utc
+            FROM voucher_delivery_um_stages AS s
+            LEFT JOIN voucher_delivery_um_stage_ack AS a ON a.stage_id=s.id
+            WHERE s.attempt_id=$attempt ORDER BY s.id DESC LIMIT $limit
+            """;
+        cmd.Parameters.AddWithValue("$attempt", attemptId);
+        cmd.Parameters.AddWithValue("$limit", limit);
+        using var reader = cmd.ExecuteReader();
+        var rows = new List<VoucherDeliveryUserManagerStage>();
+        while (reader.Read())
+        {
+            string? ackTime = reader.IsDBNull(6) ? null : reader.GetString(6);
+            rows.Add(new VoucherDeliveryUserManagerStage(
+                reader.GetInt64(0), reader.GetInt64(1),
+                reader.GetInt32(2), reader.GetInt32(3), reader.GetString(4),
+                ackTime is null ? "prepared" : "acknowledged",
+                reader.GetString(5), ackTime));
+        }
+        return rows;
+    }
+
+    private SqliteConnection Open(bool readOnly = false)
+    {
+        var db = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = _path,
+            Mode = readOnly ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWrite,
+            Pooling = false, Cache = SqliteCacheMode.Private,
+            ForeignKeys = true, DefaultTimeout = 10
+        }.ToString());
+        db.Open();
+        return db;
+    }
+
+    private static bool Valid(string? value, int max) =>
+        !string.IsNullOrWhiteSpace(value) && value.Length <= max &&
+        !value.Any(char.IsControl);
+}

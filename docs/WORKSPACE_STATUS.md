@@ -1,0 +1,108 @@
+# HadramoutNET functional workspace status
+
+The new WPF MainWindow and WorkspaceWindow are **working foundations**, not
+yet a complete recreation of all the original Python program's services.
+
+## Live authentication and session
+
+- Paid license: original pinned Supabase signed Ed25519 feed only.
+  No paid code, HTTP status or cached entitlement alone opens the workspace.
+- Free trial: user must explicitly choose trial, then RouterOS /login
+  and /system/identity/print must succeed BEFORE committing the new .NET
+  protected trial history (which merges original history READ-ONLY).
+- Session remains open for live read-only operations and is disposed on
+  logout, failed/expired authorization and application close.
+- Paid validity is rechecked from the signed network feed at the original
+  interval and the authorization is reevaluated before every new read.
+- No RouterOS password is persisted. Trial start is immutable after renewal.
+
+## Live screens currently wired
+
+- Dashboard: router name, RouterOS version, uptime, CPU, RAM, Hotspot
+  voucher count, active Hotspot, PPP active and UM6/UM7 user counts.
+  Unavailable/forbidden services appear as **unavailable**, not zero.
+- Hotspot users: read-only table with name, profile, disabled, limits.
+  Passwords are not requested from RouterOS.
+- PPPoE accounts: a separate live, read-only table with username, profile,
+  disabled state and service. No password columns or mutation actions.
+- Network monitoring: separate read-only Hotspot server, router-discovered
+  neighbor and live Hotspot/PPPoE session tabs. All data is fetched from the
+  authorized session using exact property lists. A count-only preflight refuses
+  unsafe neighbor (>5000) or per-service session (>2500) listings, unknown
+  counts are unavailable rather than zero. Search and explicit IP/MAC copy
+  are local-only. See `docs/NETWORK_MONITORING.md`.
+- User Manager database health (read-only): a dedicated network-monitoring
+  tab detects RouterOS v7, falls back to v6 only when unsupported, then
+  requests only the database-size and free-disk-space properties.
+  A denied/empty/partial response is shown as unavailable rather than
+  as zero. No database optimize, save or restore command is exposed.
+  Real wire-protocol regression tests are authored; final Windows CI
+  execution is blocked before any runner allocation and remains
+  NOT EXECUTED on the new SHA. See `docs/NETWORK_MONITORING.md`.
+- Targeted session maintenance: user-selectable SINGLE active Hotspot or PPPoE
+  session, double-confirmed in WPF. A fresh exact-ID RouterOS read must
+  match both username and IP before an internal guarded one-ID /remove.
+  An acknowledged reply means the request was accepted, not proven offline.
+  Lost acknowledgment is reported UNCERTAIN, never retried, and clears the
+  potentially stale UI listing. No bulk disconnect or automated maintenance
+  path is enabled. Every confirmed attempt is now durably journaled in an
+  isolated `maintenance_audit` table before any RouterOS command; its
+  started/dispatching/accepted/rejected/uncertain state survives restart and
+  is shown in a dedicated read-only network tab. The local journal must
+  initialize and accept the dispatch marker or the remote write is blocked.
+  Router hardware acceptance and broader publication audits remain open.
+  See `docs/MAINTENANCE_AUDIT.md`.
+- Session audit reconciliation: an explicit, read-only targeted lookup on
+  the **same router identity and endpoint** appends one independent status:
+  observed_present, observed_absent, observed_changed or unavailable.
+  Original accepted/uncertain dispatch records never change, and a
+  missing session is never labelled confirmed disconnected. WPF offers
+  a selected-record recheck and last-observation/UTC columns; no replay.
+- User Manager v6/v7: the pre-existing UserManagerCatalog page is retained
+  (user and profile listing, permission-aware status); no parallel directory
+  or duplicate UI handler was added. The separate new RouterAccountDirectory
+  handles PPPoE only. Real-router version and permission acceptance remains
+  outstanding.
+- Create cards: secure local username/password draft generation,
+  Excel, CSV, genuine PDF card sheets and guarded .rsc exports. A separate explicit button permits
+  **confirmed Hotspot or PPP publication**, preflight-reading only live usernames
+  and profiles. Duplicates or unknown profiles refuse the batch before writes.
+  Per-card RouterOS traps stop delivery and uncertain transport responses
+  NEVER trigger automatic retries. Partial changes require manual reconciliation.
+  User Manager v6/v7 now also supports **explicit confirmed provisioning**
+  with real remote owner/profile preflight and two-phase account/profile
+  linking. Any uncertain stage blocks replay of the draft. Full durable
+  operation audit is still unimplemented.
+- Package settings: explicit local SavePackage/LoadPackage, persisted
+  in HadramoutNET's own SQLite store, not Python's original database.
+- Legacy history: explicit file-picker preview of an original Python schema-v8
+  SQLite database, validated by integrity and foreign-key checks in a read-only
+  in-memory snapshot (including WAL). The preview creates no target database
+  and discloses only record counts. A SECOND explicit confirmation triggers
+  the existing one-time, transactional import into the isolated .NET store.
+  The original database is never opened for writes and no paid/trial state or
+  router credentials are imported. A paginated read-only archive shows only
+  historic usernames, batch, profile, service, status and creation date;
+  historical card passwords remain stored for migration compatibility but are
+  never requested or displayed by this archive page.
+  Imported history does NOT activate old accounts on a router or enable
+  native .NET service management. Operators must close the legacy app or
+  select a trusted snapshot before copying.
+
+- Logout: close active RouterOS socket and return to protected login.
+
+## Not finished / release blockers
+
+- Real hardware parity acceptance for Windows x86/x64, RouterOS v6/v7
+  and API-SSL; trial continuation against existing customer DPAPI files;
+  sharing ProgramData storage permissions; cross-process serialization;
+  resilient clock handling across suspend/resume.
+- Atomic online card creation/delivery with duplicate prevention,
+  activity/error recovery, remaining Hotspot PPP and UM6/UM7 service
+  operations, user maintenance, subscriptions and end-to-end profile lifecycle.
+- Physical card layouts, live preview, PDF and native Windows print,
+  router file transfer, reports, full styling/navigation parity and
+  installer/portable post-install validation.
+- Packaging CI remains gated. Passing unit/integration tests on synthetic
+  TCP servers does not constitute release acceptance or reason to merge
+  the draft PR into main.

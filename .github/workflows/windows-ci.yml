@@ -1,0 +1,127 @@
+name: HadramoutNET Windows Core and Release
+
+on:
+  push:
+    branches:
+      - 'migration/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Push and pull_request from the same migration branch can both start
+# this workflow. Keep only the latest run for that branch (including a
+# superseded commit), while the Core and Release jobs still run in parallel
+# *within* the surviving run and are evaluated on the same SHA.
+# This conserves private-repository Windows runner compute allowance.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows-core:
+    name: Windows Core
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify pinned Python reference hashes
+        shell: pwsh
+        run: |
+          $manifest = Get-Content docs/SOURCE_MANIFEST.json -Raw | ConvertFrom-Json
+          if ($manifest.source_commit -ne 'bdfb355b1dbaf8f868d811ea55d4c1af26eb3a37') {
+            throw 'Unexpected pinned source commit'
+          }
+          foreach ($item in $manifest.verified) {
+            $path = "reference/python-v1.1.3/$($item.path)"
+            if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing source reference: $path" }
+            $actual = (git rev-parse "HEAD:$path").Trim()
+            if ($actual -ne $item.blob_sha) { throw "Source modified: $path" }
+          }
+          Write-Host "Verified $($manifest.verified.Count) original Git blobs."
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+          architecture: x64
+      - name: Restore test and core projects
+        run: dotnet restore tests/HadramoutNET.Tests/HadramoutNET.Tests.csproj
+      - name: Build and treat warnings as errors
+        run: dotnet build tests/HadramoutNET.Tests/HadramoutNET.Tests.csproj -c Release --no-restore -warnaserror
+      - name: Test before any packaging
+        run: dotnet test tests/HadramoutNET.Tests/HadramoutNET.Tests.csproj -c Release --no-build --no-restore --logger "trx;LogFileName=windows-core.trx" --results-directory TestResults/Core
+      - name: Compile WPF login visual foundation (no shipping artifacts)
+        run: dotnet build src/HadramoutNET.App/HadramoutNET.App.csproj -c Release --arch x64 -warnaserror
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-Core-TestResults
+          path: TestResults/Core/**/*.trx
+          if-no-files-found: ignore
+
+  windows-release:
+    name: Windows Release tests (${{ matrix.arch }})
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+          architecture: ${{ matrix.arch }}
+      - name: Restore for target architecture
+        run: dotnet restore tests/HadramoutNET.Tests/HadramoutNET.Tests.csproj --arch ${{ matrix.arch }}
+      - name: Compile release test project for target architecture
+        run: dotnet build tests/HadramoutNET.Tests/HadramoutNET.Tests.csproj -c Release --arch ${{ matrix.arch }} --no-restore -warnaserror
+      - name: Run release tests before packaging
+        run: dotnet test tests/HadramoutNET.Tests/HadramoutNET.Tests.csproj -c Release --arch ${{ matrix.arch }} --no-build --no-restore --logger "trx;LogFileName=windows-release-${{ matrix.arch }}.trx" --results-directory TestResults/Release
+      - name: Compile WPF login visual foundation (${{ matrix.arch }})
+        run: dotnet build src/HadramoutNET.App/HadramoutNET.App.csproj -c Release --arch ${{ matrix.arch }} -warnaserror
+      - name: Upload release test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-Release-${{ matrix.arch }}-TestResults
+          path: TestResults/Release/**/*.trx
+          if-no-files-found: ignore
+
+  # Candidate-only packages, never a public release. The dependency graph
+  # gates packaging on SUCCESS of Windows Core and BOTH Release matrix arches
+  # on this SAME SHA. Release tests always run before these output steps.
+  windows-qa-packages:
+    name: QA Portable + Installer (${{ matrix.arch }})
+    if: github.event_name == 'pull_request'
+    needs: [windows-core, windows-release]
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+          architecture: x64
+      - name: Build two QA candidates after successful core and release tests
+        shell: pwsh
+        run: ./scripts/Build-QACandidates.ps1 -Arch ${{ matrix.arch }}
+      - name: Upload verified unsigned QA candidates (not a release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: HadramoutNET-${{ matrix.arch }}-QA-candidates
+          path: |
+            out/qa/HadramoutNET-win-${{ matrix.arch }}-Portable-QA.zip
+            out/qa/HadramoutNET-win-${{ matrix.arch }}-Installer-QA.exe
+            out/qa/HadramoutNET-win-${{ matrix.arch }}-SHA256.txt
+          if-no-files-found: error
+          retention-days: 7
+
+# QA candidates are unsigned and only for controlled acceptance tests.
+# No GitHub Release, auto-merge, or production promotion is permitted until
+# original Python functional parity and real hardware/printer acceptance.
