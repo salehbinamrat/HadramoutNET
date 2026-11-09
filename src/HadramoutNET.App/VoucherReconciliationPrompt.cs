@@ -5,7 +5,7 @@ using HadramoutNET.Core.Data;
 namespace HadramoutNET.App;
 
 /// <summary>
-/// A one-time operator prompt for verifying a previous User Manager upload.
+/// A one-time operator prompt for verifying a previous RouterOS upload.
 /// Passwords are neither requested nor stored. The input remains in memory
 /// only for the immediate, read-only comparison to the live router.
 /// </summary>
@@ -45,7 +45,7 @@ internal static class VoucherReconciliationPrompt
 
         var intro = new TextBlock
         {
-            Text = "اختر محاولة User Manager غير محسومة، ثم ألصق أسماء المستخدمين " +
+            Text = "اختر محاولة رفع غير محسومة (Hotspot أو PPP أو User Manager)، ثم ألصق أسماء المستخدمين " +
                    "الأصلية من ملف موثوق: اسم واحد في كل سطر دون كلمات مرور. " +
                    "التحقق للقراءة فقط ولا يحول النتيجة القديمة إلى نجاح. " +
                    "لا تُرسل ملفات CSV كاملة أو رموز تراخيص.",
@@ -64,7 +64,7 @@ internal static class VoucherReconciliationPrompt
             select.Items.Add(new ComboBoxItem
             {
                 Tag = item,
-                Content = $"#{item.Id} | {item.CreatedAtUtc} | {item.Profile} | " +
+                Content = $"#{item.Id} | {item.CreatedAtUtc} | {item.Service} / {item.Profile} | " +
                           $"{item.Added}/{item.Attempted} | {item.StateLabel}"
             });
         select.SelectedIndex = 0;
