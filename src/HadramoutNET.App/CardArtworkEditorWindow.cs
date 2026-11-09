@@ -40,7 +40,7 @@ internal static class CardArtworkEditorWindow
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             FlowDirection = FlowDirection.RightToLeft,
             ShowInTaskbar = false,
-            Width = 640, Height = 795, MinWidth = 500, MinHeight = 550
+            Width = 780, Height = 795, MinWidth = 670, MinHeight = 550
         };
         var content = new StackPanel { Margin = new Thickness(17) };
 
@@ -225,10 +225,12 @@ internal static class CardArtworkEditorWindow
 
         content.Children.Add(new TextBlock
         {
-            Text = "مواضع العناصر الأصلية (X وY بالنقاط المرجعية 280×130)",
+            Text = "مواضع العناصر (X وY بالنقاط 280×130)، حجم كل نص (0.4–4)، ولون مستقل اختياري",
             FontWeight = FontWeights.Bold, Margin = new Thickness(0, 9, 0, 6)
         });
         var positions = new Dictionary<string, (TextBox X, TextBox Y)>(StringComparer.Ordinal);
+        var scaleInputs = new Dictionary<string, TextBox>(StringComparer.Ordinal);
+        var colorInputs = new Dictionary<string, TextBox>(StringComparer.Ordinal);
         foreach (var (key, label) in Layers)
         {
             CardArtPoint point = current.Positions is not null &&
@@ -236,17 +238,43 @@ internal static class CardArtworkEditorWindow
                     ? p : CardArtwork.DefaultPositions[key];
             var row = new StackPanel { Orientation = Orientation.Horizontal,
                 Margin = new Thickness(0, 2, 0, 2) };
-            row.Children.Add(new TextBlock { Text = label, Width = 170,
+            row.Children.Add(new TextBlock { Text = label, Width = 136,
                 VerticalAlignment = VerticalAlignment.Center });
-            var x = new TextBox { Width = 90, Height = 28, Margin = new Thickness(4),
+            var x = new TextBox { Width = 70, Height = 28, Margin = new Thickness(3),
                 Text = point.X.ToString("G", CultureInfo.InvariantCulture) };
-            var y = new TextBox { Width = 90, Height = 28, Margin = new Thickness(4),
+            var y = new TextBox { Width = 70, Height = 28, Margin = new Thickness(3),
                 Text = point.Y.ToString("G", CultureInfo.InvariantCulture) };
             row.Children.Add(new TextBlock { Text = "X", VerticalAlignment = VerticalAlignment.Center });
             row.Children.Add(x);
             row.Children.Add(new TextBlock { Text = "Y", VerticalAlignment = VerticalAlignment.Center });
             row.Children.Add(y);
             positions[key] = (x, y);
+            if (key != "qr")
+            {
+                double factor = current.LayerScales is not null &&
+                    current.LayerScales.TryGetValue(key, out double saved) ?
+                        saved : 1.0;
+                row.Children.Add(new TextBlock { Text = "×",
+                    VerticalAlignment = VerticalAlignment.Center });
+                var scale = new TextBox { Width = 63, Height = 28,
+                    Margin = new Thickness(3),
+                    Text = factor.ToString("G", CultureInfo.InvariantCulture) };
+                row.Children.Add(scale);
+                scaleInputs[key] = scale;
+                if (key is not ("username" or "password"))
+                {
+                    string selected = current.LayerColors is not null &&
+                        current.LayerColors.TryGetValue(key, out string? color) ?
+                            color : "";
+                    row.Children.Add(new TextBlock { Text = "لون",
+                        VerticalAlignment = VerticalAlignment.Center });
+                    var color = new TextBox { Width = 100, Height = 28,
+                        Margin = new Thickness(3), Text = selected,
+                        ToolTip = "اتركه فارغا لاستخدام اللون العام، أو أدخل #RRGGBB" };
+                    row.Children.Add(color);
+                    colorInputs[key] = color;
+                }
+            }
             content.Children.Add(row);
         }
 
@@ -276,8 +304,22 @@ internal static class CardArtworkEditorWindow
                     item => new CardArtPoint(
                         Read(item.Value.X, 0, 280), Read(item.Value.Y, 0, 130)),
                     StringComparer.Ordinal);
+                var scales = new Dictionary<string, double>(StringComparer.Ordinal);
+                foreach (var (key, input) in scaleInputs)
+                {
+                    double factor = Read(input, 0.4, 4.0);
+                    if (factor != 1.0) scales[key] = factor;
+                }
+                var colors = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var (key, input) in colorInputs)
+                {
+                    string color = input.Text.Trim();
+                    if (color.Length != 0) colors[key] = color;
+                }
                 var result = current with
                 {
+                    LayerScales = scales,
+                    LayerColors = colors,
                     Title = titleText.Text, Phone = phoneText.Text,
                     Other = otherText.Text, Other2 = other2Text.Text,
                     Price = priceText.Text, Duration = durationText.Text,
