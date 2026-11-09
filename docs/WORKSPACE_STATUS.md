@@ -44,6 +44,12 @@ yet a complete recreation of all the original Python program's services.
   initialize and accept the dispatch marker or the remote write is blocked.
   Router hardware acceptance and broader publication audits remain open.
   See `docs/MAINTENANCE_AUDIT.md`.
+- Session audit reconciliation: an explicit, read-only targeted lookup on
+  the **same router identity and endpoint** appends one independent status:
+  observed_present, observed_absent, observed_changed or unavailable.
+  Original accepted/uncertain dispatch records never change, and a
+  missing session is never labelled confirmed disconnected. WPF offers
+  a selected-record recheck and last-observation/UTC columns; no replay.
 - User Manager v6/v7: the pre-existing UserManagerCatalog page is retained
   (user and profile listing, permission-aware status); no parallel directory
   or duplicate UI handler was added. The separate new RouterAccountDirectory
