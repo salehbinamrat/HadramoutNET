@@ -524,6 +524,10 @@
                                     <WrapPanel Grid.Row="0" Margin="3,0,3,8">
                                         <Button Content="تحديث سجل العمليات" Width="170" Height="36"
                                                 Margin="4" Click="RefreshMaintenanceAudit_Click"/>
+                                        <Button x:Name="RecheckSessionButton"
+                                                Content="التحقق من السجل المحدد" Width="190" Height="36"
+                                                Margin="4" IsEnabled="False"
+                                                Click="RecheckSession_Click"/>
                                     </WrapPanel>
                                     <TextBlock x:Name="MaintenanceAuditNotice" Grid.Row="1"
                                                Margin="4,0,4,10" TextWrapping="Wrap"
@@ -540,6 +544,8 @@
                                             <DataGridTextColumn Header="المعرف" Binding="{Binding RecordId}" Width="85"/>
                                             <DataGridTextColumn Header="الحالة" Binding="{Binding StateLabel}" Width="155"/>
                                             <DataGridTextColumn Header="النتيجة" Binding="{Binding Outcome}" Width="145"/>
+                                            <DataGridTextColumn Header="آخر ملاحظة" Binding="{Binding LastObservationLabel}" Width="270"/>
+                                            <DataGridTextColumn Header="وقت التحقق UTC" Binding="{Binding LastObservedUtc}" Width="195"/>
                                         </DataGrid.Columns>
                                     </DataGrid>
                                 </Grid>
