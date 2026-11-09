@@ -33,6 +33,10 @@ public partial class WorkspaceWindow : Window
     private bool _published;
     private bool _uploading;
     private readonly RouterVoucherPublisher _publisher = new();
+    private readonly RouterUserManagerPublisher _umPublisher = new();
+    private bool _deliveryUncertain;
+    private int _userManagerVersion;
+    private IReadOnlyList<UserManagerProfileRow> _userManagerProfiles = [];
     private PackageSettingsStore? _packages;
     private bool _checking;
     private bool _refreshing;
@@ -100,6 +104,9 @@ public partial class WorkspaceWindow : Window
             UserManagerCatalogResult result =
                 await new UserManagerCatalog().ReadAsync(_session, _cancel.Token);
             if (!IsLoaded) return;
+            _userManagerVersion = result.UsersComplete ? result.Version : 0;
+            _userManagerProfiles = result.UsersComplete ?
+                result.Profiles : [];
 
             if (result.Version != 0)
             {
@@ -259,6 +266,7 @@ public partial class WorkspaceWindow : Window
             // mandatory before actually importing it to the router.
             _generated = VoucherGenerator.Generate(options, _ => false);
             _published = false;
+            _deliveryUncertain = false;
             CardGrid.ItemsSource = _generated;
             CardsNotice.Text = $"تم إنشاء {_generated.Count} مسودة؛ لم ترفع إلى MikroTik.";
             WorkspaceStatus.Text = "راجع الأرقام وكلمات المرور قبل تصدير أي ملف.";
@@ -272,10 +280,12 @@ public partial class WorkspaceWindow : Window
     private async void UploadCards_Click(object sender, RoutedEventArgs e)
     {
         if (_uploading || !ConfirmCurrentAccess()) return;
-        if (_generated.Count == 0 || _published)
+        if (_generated.Count == 0 || _published || _deliveryUncertain)
         {
-            CardsNotice.Text = _published ? "هذه المسودة تم رفعها بالفعل، لا تعِد إرسالها." :
-                "أنشئ مسودة كروت قبل الرفع.";
+            CardsNotice.Text = _deliveryUncertain ?
+                "نتيجة رفع سابق غير مؤكدة: راجع المستخدمين على الراوتر أولا، ثم أنشئ مسودة جديدة." :
+                (_published ? "هذه المسودة تم رفعها بالفعل، لا تعِد إرسالها." :
+                "أنشئ مسودة كروت قبل الرفع.");
             return;
         }
         string service = Choice(CardServiceCombo);
@@ -295,17 +305,22 @@ public partial class WorkspaceWindow : Window
         CardsNotice.Text = "جارٍ فحص المستخدمين والباقة ثم الرفع بدون تكرار تلقائي...";
         try
         {
-            VoucherPublishReport result = await _publisher.PublishAsync(
-                _session, _generated,
-                new VoucherPublishOptions(service, profile, Confirmed: true),
-                _cancel.Token);
+            VoucherPublishReport result = service == "userman"
+                ? await _umPublisher.PublishAsync(_session, _generated,
+                    new UserManagerPublishOptions(profile, Confirmed: true,
+                        Customer: UmCustomerBox.Text.Trim()), _cancel.Token)
+                : await _publisher.PublishAsync(
+                    _session, _generated,
+                    new VoucherPublishOptions(service, profile, Confirmed: true),
+                    _cancel.Token);
             if (!IsLoaded) return;
             if (result.Success) _published = true;
+            if (result.Uncertain) _deliveryUncertain = true;
             CardsNotice.Text = result.Message +
                 $" — تمت إضافة {result.Added} من {result.Attempted}.";
-            if (!result.Success && result.Added > 0)
+            if (!result.Success && (result.Added > 0 || result.Uncertain))
                 MessageBox.Show(this,
-                    "تمت إضافة بعض الكروت، لكن العملية لم تكتمل.\n" +
+                    "الرفع غير مكتمل أو لا يمكن الجزم بنتيجة إنشاء أحد المستخدمين.\n" +
                     "الأسماء المؤكدة: " + string.Join("، ", result.AddedUsernames.Take(12)) +
                     (result.Added > 12 ? "..." : "") +
                     "\nراجع المستخدمين على MikroTik قبل إعادة الرفع.",
@@ -315,7 +330,10 @@ public partial class WorkspaceWindow : Window
         catch (Exception)
         {
             if (IsLoaded)
-                CardsNotice.Text = "تعذر الرفع؛ تحقق من المستخدمين في الراوتر قبل محاولة جديدة.";
+            {
+                _deliveryUncertain = true;
+                CardsNotice.Text = "تعذر الرفع وقد تكون بعض الأوامر وصلت؛ راجع الراوتر وأنشئ مسودة جديدة.";
+            }
         }
         finally
         {
@@ -333,6 +351,10 @@ public partial class WorkspaceWindow : Window
             throw new InvalidOperationException("أنشئ مسودة كروت قبل التصدير.");
         string service = Choice(CardServiceCombo);
         string profile = CardProfileBox.Text.Trim();
+        string customer = UmCustomerBox.Text.Trim();
+        if (service == "userman" && customer.Length == 0 && _userManagerVersion == 6)
+            customer = _userManagerProfiles.FirstOrDefault(
+                row => string.Equals(row.Name, profile, StringComparison.Ordinal))?.Owner ?? "";
         return _generated.Select(voucher => (IReadOnlyDictionary<string, string?>)
             new Dictionary<string, string?>
             {
@@ -341,6 +363,9 @@ public partial class WorkspaceWindow : Window
                 ["password"] = voucher.Password,
                 ["profile"] = profile,
                 ["service"] = service,
+                ["um_version"] = service == "userman" && _userManagerVersion != 0 ?
+                    _userManagerVersion.ToString(CultureInfo.InvariantCulture) : "",
+                ["customer"] = service == "userman" ? customer : "",
                 ["server"] = "all",
                 ["status"] = _published ? "published" : "draft",
                 ["created_at"] = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:sszzz",
@@ -456,7 +481,8 @@ public partial class WorkspaceWindow : Window
                 ["create.characters"] = JsonSerializer.SerializeToElement(CardAlphabetBox.Text),
                 ["create.format"] = JsonSerializer.SerializeToElement(Choice(CardFormatCombo)),
                 ["create.service"] = JsonSerializer.SerializeToElement(Choice(CardServiceCombo)),
-                ["create.profile"] = JsonSerializer.SerializeToElement(CardProfileBox.Text)
+                ["create.profile"] = JsonSerializer.SerializeToElement(CardProfileBox.Text),
+                ["create.customer"] = JsonSerializer.SerializeToElement(UmCustomerBox.Text)
             };
             _packages.SavePackage(PackageNameBox.Text, settings);
             ReloadPackages();
@@ -491,6 +517,8 @@ public partial class WorkspaceWindow : Window
             chars.ValueKind == JsonValueKind.String) CardAlphabetBox.Text = chars.GetString();
         if (values.TryGetValue("create.profile", out var profile) &&
             profile.ValueKind == JsonValueKind.String) CardProfileBox.Text = profile.GetString();
+        if (values.TryGetValue("create.customer", out var owner) &&
+            owner.ValueKind == JsonValueKind.String) UmCustomerBox.Text = owner.GetString();
         if (values.TryGetValue("create.format", out var format) &&
             format.ValueKind == JsonValueKind.String) SelectChoice(CardFormatCombo, format.GetString());
         if (values.TryGetValue("create.service", out var service) &&

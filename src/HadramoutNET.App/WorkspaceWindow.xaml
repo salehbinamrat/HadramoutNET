@@ -172,11 +172,17 @@
                                           SelectedIndex="0">
                                     <ComboBoxItem Content="Hotspot" Tag="hotspot"/>
                                     <ComboBoxItem Content="PPPoE" Tag="ppp"/>
+                                    <ComboBoxItem Content="User Manager 6/7" Tag="userman"/>
                                 </ComboBox>
                             </StackPanel>
                             <StackPanel Margin="5">
                                 <TextBlock Text="اسم الباقة"/>
                                 <TextBox x:Name="CardProfileBox" Width="140" Text="default"/>
+                            </StackPanel>
+                            <StackPanel Margin="5">
+                                <TextBlock Text="مالك User Manager 6"/>
+                                <TextBox x:Name="UmCustomerBox" Width="150"
+                                         ToolTip="اختياري عند توفر مالك الباقة على الراوتر، إلزامي للإصدار 6 إذا لم يُحدّد المالك تلقائيا"/>
                             </StackPanel>
                             <StackPanel Margin="5">
                                 <TextBlock Text="الحروف/الأرقام"/>
