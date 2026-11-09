@@ -39,7 +39,9 @@ public sealed record CardArtOptions(
     string UsernameColor = "#17110B",
     string BorderColor = "#C59F63",
     double BorderWidth = 1,
-    double BorderRadius = 0);
+    double BorderRadius = 0,
+    IReadOnlyDictionary<string, double>? LayerScales = null,
+    IReadOnlyDictionary<string, string>? LayerColors = null);
 
 public sealed record CardArtText(
     string Key, string Value, double X, double Y, double Width,
@@ -89,6 +91,7 @@ public static class CardArtwork
             throw new PrintLayoutException("اسم المستخدم أو كلمة المرور غير صالح للطباعة.");
         if (!double.IsFinite(options.QrSizeMm) || options.QrSizeMm is < 1 or > 300)
             throw new PrintLayoutException("حجم QR غير صالح.");
+        CardArtPresetCodec.ValidateLayerStyles(options);
         if (!double.IsFinite(options.FontSize) ||
             options.FontSize is < 1 or > 300 ||
             !double.IsFinite(options.BorderWidth) ||
@@ -130,6 +133,14 @@ public static class CardArtwork
             string color, bool required = false, bool bold = true)
         {
             if (!enabled || string.IsNullOrEmpty(value)) return;
+            if (options.LayerScales is not null &&
+                options.LayerScales.TryGetValue(key, out double scale))
+                fontPt *= scale;
+            // Credentials intentionally share username color, as in Python.
+            if (key is not ("username" or "password") &&
+                options.LayerColors is not null &&
+                options.LayerColors.TryGetValue(key, out string? layerColor))
+                color = layerColor;
             if (value.Length > 256 || value.Any(char.IsControl))
                 throw new PrintLayoutException("نص بطاقة غير صالح أو طويل.");
             var point = positions[key];
