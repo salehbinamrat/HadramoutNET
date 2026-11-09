@@ -247,7 +247,7 @@ internal static class WindowsVoucherPrinter
             Stretch = artwork!.BackgroundMode switch
             {
                 "fit" => Stretch.Uniform,
-                "fill" => Stretch.UniformToFill,
+                "fill" or "crop" => Stretch.UniformToFill,
                 "tile" => Stretch.Fill,
                 _ => Stretch.Fill
             },
