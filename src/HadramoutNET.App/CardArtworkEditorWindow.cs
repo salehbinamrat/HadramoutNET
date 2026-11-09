@@ -118,6 +118,25 @@ internal static class CardArtworkEditorWindow
         var qrSize = TextField(content, "حجم QR بالمليمتر",
             current.QrSizeMm.ToString("G17", CultureInfo.InvariantCulture));
 
+        content.Children.Add(new TextBlock {
+            Text = "إعدادات خطوط وإطار الكرت", FontWeight = FontWeights.Bold,
+            Margin = new Thickness(0, 9, 0, 7)
+        });
+        var fontSize = TextField(content, "حجم الخط المرجعي (1-300)",
+            current.FontSize.ToString("G", CultureInfo.InvariantCulture));
+        var fontBold = Toggle(content, "الخط الأساسي عريض", current.FontBold);
+        var fontColor = TextField(content, "لون النصوص الأخرى (#RRGGBB)",
+            current.FontColor);
+        var credentialColor = TextField(content,
+            "لون اسم المستخدم وكلمة المرور معا (#RRGGBB)",
+            current.UsernameColor);
+        var borderColor = TextField(content, "لون إطار الكرت (#RRGGBB)",
+            current.BorderColor);
+        var borderWidth = TextField(content, "سمك الإطار المرجعي (0-100)",
+            current.BorderWidth.ToString("G", CultureInfo.InvariantCulture));
+        var borderRadius = TextField(content, "استدارة زوايا الإطار (0-100)",
+            current.BorderRadius.ToString("G", CultureInfo.InvariantCulture));
+
         string? backgroundData = current.BackgroundData;
         content.Children.Add(new TextBlock {
             Text = "صورة خلفية الكرت (تحفظ داخل إعدادات الباقة)",
@@ -274,6 +293,13 @@ internal static class CardArtworkEditorWindow
                         ?? "credentials",
                     QrLoginUrl = qrUrl.Text,
                     QrSizeMm = Read(qrSize, 1, 300),
+                    FontSize = Read(fontSize, 1, 300),
+                    FontBold = Selected(fontBold),
+                    FontColor = fontColor.Text,
+                    UsernameColor = credentialColor.Text,
+                    BorderColor = borderColor.Text,
+                    BorderWidth = Read(borderWidth, 0, 100),
+                    BorderRadius = Read(borderRadius, 0, 100),
                     BackgroundData = backgroundData,
                     BackgroundMode =
                         (backgroundMode.SelectedItem as ComboBoxItem)?.Tag?.ToString() ??
