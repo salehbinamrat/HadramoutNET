@@ -195,6 +195,33 @@
                                 <TextBox x:Name="CardAlphabetBox" Width="145"
                                          Text="0123456789"/>
                             </StackPanel>
+                            <StackPanel Margin="5">
+                                <TextBlock Text="بادئة اسم المستخدم"/>
+                                <TextBox x:Name="CardPrefixBox" Width="135" MaxLength="64"/>
+                            </StackPanel>
+                            <StackPanel Margin="5">
+                                <TextBlock Text="طول كلمة المرور"/>
+                                <TextBox x:Name="PasswordLengthBox" Width="115" Text="6"/>
+                            </StackPanel>
+                            <StackPanel Margin="5">
+                                <TextBlock Text="أحرف كلمة المرور"/>
+                                <TextBox x:Name="PasswordAlphabetBox" Width="200"
+                                         Text="abcdefghijklmnopqrstuvwxyz0123456789"/>
+                            </StackPanel>
+                            <StackPanel Margin="5">
+                                <TextBlock Text="بداية الترقيم"/>
+                                <TextBox x:Name="StartSequenceBox" Width="115" Text="1"/>
+                            </StackPanel>
+                            <StackPanel Margin="5">
+                                <TextBlock Text="صيغة الترقيم"/>
+                                <ComboBox x:Name="SequenceModeCombo" Width="130" Height="35"
+                                          SelectedIndex="2">
+                                    <ComboBoxItem Content="00" Tag="00"/>
+                                    <ComboBoxItem Content="000" Tag="000"/>
+                                    <ComboBoxItem Content="0000" Tag="0000"/>
+                                    <ComboBoxItem Content="بدون أصفار" Tag="plain"/>
+                                </ComboBox>
+                            </StackPanel>
                         </WrapPanel>
                         <DataGrid x:Name="CardGrid" Grid.Row="2"
                                   AutoGenerateColumns="False" IsReadOnly="True"
