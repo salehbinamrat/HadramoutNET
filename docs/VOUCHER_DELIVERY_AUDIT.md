@@ -95,7 +95,7 @@ oversized router tables fail closed without claiming cards are absent.
 
 Only aggregate counts in allowlisted categories are saved to the
 separate append-only `voucher_delivery_standard_checks` table:
-`not_found`, `disabled`, `profile_matches`, `profile_other`,
+`not_found`, `disabled`, `disabled_unknown`, `profile_matches`, `profile_other`,
 `profile_unknown`, and (PPPoE only) `service_other`. Exactly
 the original attempt's count must be observed. The insertion is
 atomic and bound to router identity, endpoint, service, batch size and
