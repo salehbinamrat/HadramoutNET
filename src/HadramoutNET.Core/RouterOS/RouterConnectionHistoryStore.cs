@@ -56,7 +56,7 @@ public sealed class RouterConnectionHistoryStore
         IRouterHistoryProtector? protector = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(localAppDataRoot);
-        _path = Path.Combine(localAppDataRoot, "HadramoutNET", "connections", "history.dpapi");
+        _path = Path.Combine(Path.GetFullPath(localAppDataRoot), "HadramoutNET", "connections", "history.dpapi");
         _protector = protector ?? new WindowsRouterHistoryProtector();
     }
 
@@ -65,6 +65,7 @@ public sealed class RouterConnectionHistoryStore
 
     public IReadOnlyList<RouterConnectionProfile> Read()
     {
+        VerifyProtectedPath();
         if (!File.Exists(_path)) return [];
         long size = new FileInfo(_path).Length;
         if (size is 0 or > MaxEncryptedBytes)
@@ -114,12 +115,20 @@ public sealed class RouterConnectionHistoryStore
             {
                 if (ciphertext.Length is 0 or > MaxEncryptedBytes)
                     throw new InvalidDataException("حجم البيانات المحمية غير صالح.");
+                VerifyProtectedPath();
                 string directory = Path.GetDirectoryName(_path)!;
                 Directory.CreateDirectory(directory);
+                VerifyProtectedPath();
                 string temp = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
                 try
                 {
-                    File.WriteAllBytes(temp, ciphertext);
+                    using (var file = new FileStream(temp, FileMode.CreateNew,
+                        FileAccess.Write, FileShare.None))
+                    {
+                        file.Write(ciphertext);
+                        file.Flush(flushToDisk: true);
+                    }
+                    VerifyProtectedPath();
                     File.Move(temp, _path, overwrite: true);
                 }
                 finally { if (File.Exists(temp)) File.Delete(temp); }
@@ -127,6 +136,23 @@ public sealed class RouterConnectionHistoryStore
             finally { CryptographicOperations.ZeroMemory(ciphertext); }
         }
         finally { CryptographicOperations.ZeroMemory(plaintext); }
+    }
+
+    private void VerifyProtectedPath()
+    {
+        string directory = Path.GetDirectoryName(_path)!;
+        string parent = Path.GetDirectoryName(directory)!;
+        foreach (string path in new[] { parent, directory, _path })
+        {
+            try
+            {
+                if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                    throw new InvalidDataException(
+                        "محفوظات الاتصالات تحوي رابط ملفات غير آمن؛ لن تُحفظ أو تُقرأ.");
+            }
+            catch (FileNotFoundException) { }
+            catch (DirectoryNotFoundException) { }
+        }
     }
 
     private static bool Valid(RouterConnectionProfile? p) =>

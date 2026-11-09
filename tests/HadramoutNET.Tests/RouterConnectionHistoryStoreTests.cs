@@ -73,6 +73,33 @@ public sealed class RouterConnectionHistoryStoreTests
     }
 
     [Fact]
+    public void Symbolic_link_in_connection_history_path_is_rejected_before_any_write()
+    {
+        // Windows symlink creation may require Developer Mode or elevated rights;
+        // this cross-platform filesystem-boundary regression runs on Linux.
+        if (OperatingSystem.IsWindows()) return;
+        string root = Path.Combine(Path.GetTempPath(), "net-history-link-" + Guid.NewGuid());
+        string other = Path.Combine(Path.GetTempPath(), "net-history-elsewhere-" + Guid.NewGuid());
+        Directory.CreateDirectory(Path.Combine(root, "HadramoutNET"));
+        Directory.CreateDirectory(other);
+        string link = Path.Combine(root, "HadramoutNET", "connections");
+        try
+        {
+            Directory.CreateSymbolicLink(link, other);
+            var store = new RouterConnectionHistoryStore(root, new TestProtector());
+            Assert.Throws<InvalidDataException>(() =>
+                store.Upsert(Profile(), rememberPassword: true));
+            Assert.Empty(Directory.GetFiles(other));
+        }
+        finally
+        {
+            if (Directory.Exists(link)) Directory.Delete(link);
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+            if (Directory.Exists(other)) Directory.Delete(other, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Windows_DPAPI_roundtrips_using_same_current_user_without_plaintext()
     {
         if (!OperatingSystem.IsWindows()) return;
