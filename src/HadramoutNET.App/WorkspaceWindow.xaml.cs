@@ -42,6 +42,8 @@ public partial class WorkspaceWindow : Window
     private VoucherDraftTarget? _draftTarget;
     private PrintLayoutOptions _printLayout = new();
     private CardArtOptions _cardArt = new();
+    private IReadOnlyDictionary<string, JsonElement> _cardExtraSettings =
+        new Dictionary<string, JsonElement>();
     private bool _published;
     private bool _uploading;
     private bool _verifyingUmDraft;
@@ -781,6 +783,63 @@ public partial class WorkspaceWindow : Window
     private void ExportExcel_Click(object sender, RoutedEventArgs e) =>
         ExportFile("Excel|*.xlsx", ".xlsx", (data, path) =>
             ExcelExporter.SaveExcel(data, path, "كروت حضرموت"));
+    private void ImportCardTemplate_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmCurrentAccess()) return;
+        var picker = new OpenFileDialog
+        {
+            Title = "استيراد قالب كرت حضرموت (JSON)",
+            Filter = "قالب JSON (*.json)|*.json",
+            CheckFileExists = true
+        };
+        if (picker.ShowDialog(this) != true) return;
+        try
+        {
+            var info = new FileInfo(picker.FileName);
+            if (info.Length > CardTemplateExchange.MaxJsonBytes)
+                throw new PrintLayoutException("قالب الكرت أكبر من 22 ميجابايت.");
+            CardTemplateImport imported = CardTemplateExchange.Import(
+                File.ReadAllBytes(picker.FileName));
+            _cardArt = imported.Artwork;
+            _cardExtraSettings = imported.UnrecognizedCardSettings;
+            CardsNotice.Text = imported.UnrecognizedCardSettings.Count == 0 ?
+                "تم استيراد تصميم الكرت لهذه الجلسة. احفظ الباقة للاحتفاظ به." :
+                $"تم استيراد التصميم مع {imported.UnrecognizedCardSettings.Count} إعدادا أصليا لم يُنفذ رسمها في .NET بعد. " +
+                "ستظل محفوظة مع الباقة لكنها لن تظهر في المعاينة الحالية.";
+        }
+        catch (Exception ex) when (ex is PrintLayoutException or IOException or
+            UnauthorizedAccessException or InvalidOperationException)
+        {
+            CardsNotice.Text = "رفض استيراد القالب دون تغيير التصميم: " + ex.Message;
+        }
+    }
+
+    private void ExportCardTemplate_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmCurrentAccess()) return;
+        var picker = new SaveFileDialog
+        {
+            Title = "تصدير قالب كرت حضرموت (JSON)",
+            Filter = "قالب JSON (*.json)|*.json",
+            FileName = "HadramoutNET-Card-Template.json",
+            OverwritePrompt = true
+        };
+        if (picker.ShowDialog(this) != true) return;
+        try
+        {
+            byte[] template = CardTemplateExchange.Export(
+                _cardArt, _cardExtraSettings);
+            AtomicExportFile.Write(picker.FileName,
+                staged => File.WriteAllBytes(staged, template));
+            CardsNotice.Text = "حُفظ ملف تصميم الكرت دون بيانات كروت المستخدمين أو كلمات المرور.";
+        }
+        catch (Exception ex) when (ex is PrintLayoutException or IOException or
+            UnauthorizedAccessException or InvalidOperationException)
+        {
+            CardsNotice.Text = "تعذر تصدير القالب: " + ex.Message;
+        }
+    }
+
     private void EditCardArtwork_Click(object sender, RoutedEventArgs e)
     {
         if (!ConfirmCurrentAccess()) return;
@@ -938,6 +997,8 @@ public partial class WorkspaceWindow : Window
                 settings[pair.Key] = pair.Value;
             foreach (var pair in PrintLayoutPresetCodec.ToSettings(_printLayout))
                 settings[pair.Key] = pair.Value;
+            foreach (var pair in _cardExtraSettings)
+                settings[pair.Key] = pair.Value.Clone();
             foreach (var pair in CardArtPresetCodec.ToSettings(_cardArt))
                 settings[pair.Key] = pair.Value;
             _packages.SavePackage(PackageNameBox.Text, settings);
@@ -981,6 +1042,8 @@ public partial class WorkspaceWindow : Window
         }
         _printLayout = layout;
         _cardArt = artwork;
+        _cardExtraSettings = CardTemplateExchange.ExtractExtras(
+            selected.Settings);
         PrintLayoutInfo.Text = DescribePrintLayout(layout);
         PackageNameBox.Text = selected.Name;
         var values = selected.Settings;
