@@ -101,6 +101,7 @@ public partial class WorkspaceWindow : Window
                 _voucherAudit = new VoucherDeliveryJournal(databasePath);
                 _deliveryCoordinator = new VoucherDeliveryCoordinator(_voucherAudit);
                 UploadCardsButton.IsEnabled = true;
+                ReconcileVoucherButton.IsEnabled = true;
                 var unresolved = _voucherAudit.ReadUnresolved(_session.Identity, _session.Endpoint, 20);
                 if (unresolved.Count != 0)
                     CardsNotice.Text = $"تنبيه: توجد {unresolved.Count} عملية رفع غير محسومة لهذا الراوتر. راجع سجل رفع الكروت قبل أي محاولة جديدة.";
@@ -110,6 +111,7 @@ public partial class WorkspaceWindow : Window
                 _voucherAudit = null;
                 _deliveryCoordinator = null;
                 UploadCardsButton.IsEnabled = false;
+                ReconcileVoucherButton.IsEnabled = false;
                 CardsNotice.Text = "تعذر تهيئة سجل رفع الكروت؛ أوقف البرنامج الرفع حماية من التكرار.";
             }
             ReloadPackages();
@@ -117,6 +119,7 @@ public partial class WorkspaceWindow : Window
         catch (Exception)
         {
             UploadCardsButton.IsEnabled = false;
+            ReconcileVoucherButton.IsEnabled = false;
             WorkspaceStatus.Text = "تعذر تهيئة قاعدة بيانات HadramoutNET أو سجل التدقيق؛ أُوقفت عمليات الفصل ورفع الكروت.";
         }
 
@@ -522,6 +525,75 @@ public partial class WorkspaceWindow : Window
         _ => "حالة غير معروفة"
     };
 
+    private async void ReconcileVoucher_Click(object sender, RoutedEventArgs e)
+    {
+        if (_uploading || _verifyingUmDraft || !ConfirmCurrentAccess()) return;
+        if (_voucherAudit is null)
+        {
+            CardsNotice.Text = "سجل رفع الكروت غير متاح؛ لم يبدأ الفحص.";
+            return;
+        }
+
+        _verifyingUmDraft = true;
+        ReconcileVoucherButton.IsEnabled = false;
+        try
+        {
+            var attempts = _voucherAudit.ReadUnresolved(
+                    _session.Identity, _session.Endpoint, 200)
+                .Where(item => item.Service == "userman")
+                .ToArray();
+            if (attempts.Length == 0)
+            {
+                CardsNotice.Text = "لا توجد محاولات رفع غير محسومة في User Manager لهذا الراوتر.";
+                return;
+            }
+
+            VoucherReconciliationRequest? request =
+                VoucherReconciliationPrompt.Show(this, attempts);
+            if (request is null) return;
+
+            CardsNotice.Text = "جارٍ فحص محاولة User Manager السابقة للقراءة فقط...";
+            var result = await new VoucherDeliveryReconciler(_voucherAudit)
+                .ReconcileAsync(_session, request.AttemptId, request.Usernames, _cancel.Token);
+
+            if (!IsLoaded) return;
+            if (!result.Available || result.Check is null)
+            {
+                CardsNotice.Text = result.Status switch
+                {
+                    "limit_exceeded" => "يحتوي الراوتر على سجلات أكثر من الحد الآمن للفحص.",
+                    "incomplete" => "قراءة User Manager غير مكتملة، لم يُحفظ ملخص مضلل.",
+                    "not_installed" => "User Manager غير مثبت أو غير متاح.",
+                    _ => "تعذر تأكيد القراءة من الراوتر، ولم تتغير حالة المحاولة السابقة."
+                };
+                return;
+            }
+
+            string details = string.Join("\n", result.Check.Counts
+                .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                .Select(pair => DescribeUmObservation(pair.Key) +
+                    ": " + pair.Value.ToString(CultureInfo.InvariantCulture)));
+            CardsNotice.Text =
+                $"حُفظ الفحص #{result.Check.Id} للمحاولة #{request.AttemptId} — بدون أسماء كروت أو كلمات مرور.";
+            MessageBox.Show(this,
+                details + "\n\nهذه ملاحظات حالية فقط ولا تثبت نجاح الرفع القديم. " +
+                "تبقى محاولة الرفع الأصلية غير محسومة، دون إعادة إرسال أو تعديل تلقائي.",
+                "مراجعة محاولة User Manager سابقة",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
+        catch (Exception)
+        {
+            if (IsLoaded)
+                CardsNotice.Text = "تعذر مراجعة المحاولة؛ لم تُرسل أوامر تعديل إلى الراوتر.";
+        }
+        finally
+        {
+            _verifyingUmDraft = false;
+            if (IsLoaded) ReconcileVoucherButton.IsEnabled = true;
+        }
+    }
+
     private void ShowDeliveryAudit_Click(object sender, RoutedEventArgs e)
     {
         if (!ConfirmCurrentAccess()) return;
@@ -538,8 +610,14 @@ public partial class WorkspaceWindow : Window
                 .Take(12).ToList();
             string details = history.Count == 0 ? "لم تسجل أي محاولات لهذا الراوتر." :
                 string.Join("\n", history.Select(item =>
-                    $"#{item.Id} | {item.CreatedAtUtc} | {item.Service} / {item.Profile} | " +
-                    $"{item.Added}/{item.Attempted} | {item.StateLabel}"));
+                {
+                    VoucherDeliveryCheck? latest =
+                        _voucherAudit.ReadChecks(item.Id, 1).FirstOrDefault();
+                    string checkedAt = latest is null ? "" :
+                        $" | آخر فحص: {latest.ObservedUtc} ({latest.Counts.Values.Sum()} اسم)";
+                    return $"#{item.Id} | {item.CreatedAtUtc} | {item.Service} / {item.Profile} | " +
+                        $"{item.Added}/{item.Attempted} | {item.StateLabel}{checkedAt}";
+                }));
             MessageBox.Show(this, details +
                 "\n\nالعمليات غير المؤكدة تتطلب فحص الراوتر يدويا. لا يعيد البرنامج أي كروت تلقائيا.",
                 "سجل رفع الكروت (دون كلمات مرور)", MessageBoxButton.OK,
