@@ -155,6 +155,95 @@ public sealed class RouterVoucherPublisherTests
     }
 
     [Fact]
+    public async Task Hotspot_upload_applies_each_cards_actual_time_and_transfer_limits()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        Task server = Task.Run(async () =>
+        {
+            using var peer = await listener.AcceptTcpClientAsync(deadline.Token);
+            using var stream = peer.GetStream();
+            await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token); // login
+            await Send(stream, "!done");
+            await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token); // identity
+            await Send(stream, "!re", "=name=Verified");
+            await Send(stream, "!done");
+            var count = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("=count-only=yes", count);
+            await Send(stream, "!done", "=ret=0");
+            var names = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("=.proplist=name", names);
+            await Send(stream, "!done");
+            var countProfiles = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("=count-only=yes", countProfiles);
+            await Send(stream, "!done", "=ret=1");
+            var profiles = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("/ip/hotspot/user/profile/print", profiles);
+            await Send(stream, "!re", "=name=weekly");
+            await Send(stream, "!done");
+            var add = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("/ip/hotspot/user/add", add);
+            Assert.Contains("=name=voucherlimit", add);
+            Assert.Contains("=limit-uptime=2h10m", add);
+            Assert.Contains("=limit-bytes-total=2147483648", add);
+            Assert.DoesNotContain(add, x => x.StartsWith("=price=", StringComparison.Ordinal));
+            await Send(stream, "!done", "=ret=*A");
+        }, deadline.Token);
+
+        await using var session = await Connect(port, deadline.Token);
+        var report = await new RouterVoucherPublisher().PublishAsync(session,
+            [new Voucher("0001", "voucherlimit", "pass1",
+                LimitBytes: 2147483648, LimitUptime: "2h10m")],
+            new VoucherPublishOptions("hotspot", "weekly", Confirmed: true),
+            deadline.Token);
+        Assert.True(report.Success);
+        Assert.Equal(1, report.Added);
+        await server;
+    }
+
+    [Theory]
+    [InlineData(-1L, "1h")]
+    [InlineData(1024L, "invalid")]
+    [InlineData(1024L, "1h;bad")]
+    [InlineData(1024L, "99999999999999999999999h")]
+    public async Task Invalid_card_quota_fails_before_any_router_read_or_write(
+        long bytes, string uptime)
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        Task server = Task.Run(async () =>
+        {
+            using var peer = await listener.AcceptTcpClientAsync(deadline.Token);
+            using var stream = peer.GetStream();
+            await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            await Send(stream, "!done");
+            await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            await Send(stream, "!re", "=name=Verified");
+            await Send(stream, "!done");
+            byte[] one = new byte[1];
+            using var quiet = new CancellationTokenSource(
+                TimeSpan.FromMilliseconds(600));
+            try { Assert.Equal(0, await stream.ReadAsync(one, quiet.Token)); }
+            catch (OperationCanceledException) { }
+        }, deadline.Token);
+        await using var session = await Connect(port, deadline.Token);
+        var result = await new RouterVoucherPublisher().PublishAsync(session,
+            [new Voucher("0001", "voucherinvalid", "password",
+                LimitBytes: bytes, LimitUptime: uptime)],
+            new VoucherPublishOptions("hotspot", "weekly", Confirmed: true),
+            deadline.Token);
+        Assert.False(result.Success);
+        Assert.Equal("invalid_cards", result.Reason);
+        Assert.Equal(0, result.Added);
+        await session.DisposeAsync();
+        await server;
+    }
+
+    [Fact]
     public async Task Trap_on_second_card_is_partial_and_must_never_retry()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
