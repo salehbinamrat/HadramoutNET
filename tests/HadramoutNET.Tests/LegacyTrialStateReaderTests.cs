@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Runtime.Versioning;
 using System.Text;
 using System.Text.Json;
 using HadramoutNET.Core.Licensing;
@@ -6,6 +7,7 @@ using Xunit;
 
 namespace HadramoutNET.Tests;
 
+[SupportedOSPlatform("windows")]
 public sealed class LegacyTrialStateReaderTests
 {
     private const string Machine = "TEST-TRIAL-FINGERPRINT";
