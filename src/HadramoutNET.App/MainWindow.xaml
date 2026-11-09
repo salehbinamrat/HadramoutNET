@@ -3,9 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="حضرموت لإدارة الشبكات وطباعة الكروت — تطوير .NET"
         Width="1280" Height="820"
-        MinWidth="1008" MinHeight="648"
+        MinWidth="720" MinHeight="500"
         WindowStartupLocation="CenterScreen"
-        ResizeMode="NoResize"
+        ResizeMode="CanResize"
         FontFamily="Arial" FontSize="14"
         FlowDirection="LeftToRight"
         Background="{StaticResource WindowSand}">
@@ -129,9 +129,13 @@
                                         <ColumnDefinition Width="95"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="عنوان الراوتر :" Style="{StaticResource CaptionText}"/>
-                                    <TextBox x:Name="RouterHostBox" Grid.Column="1" Text="192.168.88.1" Margin="5,0,10,0"/>
+                                    <TextBox x:Name="RouterHostBox" Grid.Column="1" Text="192.168.88.1" Margin="5,0,10,0"
+                                              FlowDirection="LeftToRight" TextAlignment="Left" Language="en-US"
+                                              TextChanged="RouterNumericInput_TextChanged"/>
                                     <TextBlock Grid.Column="2" Text="API :" Style="{StaticResource CaptionText}"/>
-                                    <TextBox x:Name="RouterPortBox" Grid.Column="3" Text="8728" Margin="5,0"/>
+                                    <TextBox x:Name="RouterPortBox" Grid.Column="3" Text="8728" Margin="5,0"
+                                              FlowDirection="LeftToRight" TextAlignment="Left" Language="en-US"
+                                              TextChanged="RouterNumericInput_TextChanged"/>
                                 </Grid>
                                 <Grid Margin="0,8,0,6">
                                     <Grid.ColumnDefinitions>
@@ -140,7 +144,8 @@
                                         <ColumnDefinition Width="165"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="اسم الدخول :" Style="{StaticResource CaptionText}"/>
-                                    <TextBox x:Name="RouterUsernameBox" Grid.Column="1" Text="admin" Margin="5,0,10,0"/>
+                                    <TextBox x:Name="RouterUsernameBox" Grid.Column="1" Text="admin" Margin="5,0,10,0"
+                                              FlowDirection="LeftToRight" TextAlignment="Left" Language="en-US"/>
                                     <CheckBox x:Name="UseSslCheck" Grid.Column="2" Content="API-SSL"
                                               VerticalAlignment="Center"/>
                                 </Grid>
@@ -151,7 +156,8 @@
                                         <ColumnDefinition Width="165"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="كلمة المرور :" Style="{StaticResource CaptionText}"/>
-                                    <PasswordBox x:Name="RouterPasswordBox" Grid.Column="1" Margin="5,0,10,0"/>
+                                    <PasswordBox x:Name="RouterPasswordBox" Grid.Column="1" Margin="5,0,10,0"
+                                                  FlowDirection="LeftToRight" Language="en-US"/>
                                     <CheckBox Grid.Column="2" Content="إظهار"
                                               IsEnabled="False" VerticalAlignment="Center"/>
                                 </Grid>

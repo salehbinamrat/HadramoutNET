@@ -2,6 +2,7 @@ using System.Threading;
 using System.Diagnostics;
 using HadramoutNET.Core.Licensing;
 using System.Windows;
+using System.Windows.Controls;
 using HadramoutNET.Core.RouterOS;
 
 namespace HadramoutNET.App;
@@ -29,6 +30,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        SourceInitialized += (_, _) => WindowWorkArea.Fit(this);
         try
         {
             _paidLicense = new PaidLicenseCoordinator(
@@ -44,6 +46,16 @@ public partial class MainWindow : Window
             ActivateLicenseButton.IsEnabled = false;
             CheckLicenseButton.IsEnabled = false;
         }
+    }
+
+    private void RouterNumericInput_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (sender is not TextBox field) return;
+        string normalized = AsciiNumerals.Normalize(field.Text);
+        if (normalized == field.Text) return;
+        int caret = field.CaretIndex;
+        field.Text = normalized;
+        field.CaretIndex = Math.Min(caret, normalized.Length);
     }
 
     private void RefreshTrialStatus()

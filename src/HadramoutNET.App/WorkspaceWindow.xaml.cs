@@ -90,6 +90,7 @@ public partial class WorkspaceWindow : Window
         _trial = trial ?? throw new ArgumentNullException(nameof(trial));
         _uptime = uptime ?? throw new ArgumentNullException(nameof(uptime));
         InitializeComponent();
+        SourceInitialized += (_, _) => WindowWorkArea.Fit(this);
         BuildSidebarNavigation();
         RefreshSidebarConnection();
         RouterCaption.Text = $"{session.Identity} — {session.Endpoint}";
