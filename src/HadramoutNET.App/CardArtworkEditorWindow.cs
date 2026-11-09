@@ -6,6 +6,7 @@ using System.Windows.Media.Imaging;
 using System.IO;
 using Microsoft.Win32;
 using HadramoutNET.Core.Printing;
+using HadramoutNET.Core.Visual;
 
 namespace HadramoutNET.App;
 
@@ -118,6 +119,7 @@ internal static class CardArtworkEditorWindow
         var qrSize = TextField(content, "حجم QR بالمليمتر",
             current.QrSizeMm.ToString("G17", CultureInfo.InvariantCulture));
 
+        TechnicalTextInput.Attach(qrSize);
         content.Children.Add(new TextBlock {
             Text = "إعدادات خطوط وإطار الكرت", FontWeight = FontWeights.Bold,
             Margin = new Thickness(0, 9, 0, 7)
@@ -136,6 +138,9 @@ internal static class CardArtworkEditorWindow
             current.BorderWidth.ToString("G", CultureInfo.InvariantCulture));
         var borderRadius = TextField(content, "استدارة زوايا الإطار (0-100)",
             current.BorderRadius.ToString("G", CultureInfo.InvariantCulture));
+
+        foreach (TextBox numeric in new[] { fontSize, borderWidth, borderRadius })
+            TechnicalTextInput.Attach(numeric);
 
         string? backgroundData = current.BackgroundData;
         content.Children.Add(new TextBlock {
@@ -244,6 +249,8 @@ internal static class CardArtworkEditorWindow
                 Text = point.X.ToString("G", CultureInfo.InvariantCulture) };
             var y = new TextBox { Width = 70, Height = 28, Margin = new Thickness(3),
                 Text = point.Y.ToString("G", CultureInfo.InvariantCulture) };
+            TechnicalTextInput.Attach(x);
+            TechnicalTextInput.Attach(y);
             row.Children.Add(new TextBlock { Text = "X", VerticalAlignment = VerticalAlignment.Center });
             row.Children.Add(x);
             row.Children.Add(new TextBlock { Text = "Y", VerticalAlignment = VerticalAlignment.Center });
@@ -259,6 +266,7 @@ internal static class CardArtworkEditorWindow
                 var scale = new TextBox { Width = 63, Height = 28,
                     Margin = new Thickness(3),
                     Text = factor.ToString("G", CultureInfo.InvariantCulture) };
+                TechnicalTextInput.Attach(scale);
                 row.Children.Add(scale);
                 scaleInputs[key] = scale;
                 if (key is not ("username" or "password"))
@@ -293,8 +301,7 @@ internal static class CardArtworkEditorWindow
             {
                 double Read(TextBox box, double lower, double upper)
                 {
-                    if (!double.TryParse(box.Text.Trim(), NumberStyles.Float,
-                            CultureInfo.InvariantCulture, out double v) ||
+                    if (!TechnicalNumberParser.TryFiniteDouble(box.Text, out double v) ||
                         !double.IsFinite(v) || v < lower || v > upper)
                         throw new PrintLayoutException("إحداثيات أو مقاسات غير صالحة.");
                     return v;
@@ -367,6 +374,7 @@ internal static class CardArtworkEditorWindow
         {
             Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto
         };
+        window.SourceInitialized += (_, _) => WindowWorkArea.Fit(window);
         return window.ShowDialog() == true ? chosen : null;
     }
 }

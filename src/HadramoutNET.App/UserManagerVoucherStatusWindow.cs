@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -42,6 +43,7 @@ internal sealed class UserManagerVoucherStatusWindow : Window
         MinHeight = 500;
         Background = new SolidColorBrush(Color.FromRgb(248, 235, 209));
         ShowInTaskbar = false;
+        SourceInitialized += (_, _) => WindowWorkArea.Fit(this);
 
         var root = new Grid { Margin = new Thickness(9) };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -140,13 +142,19 @@ internal sealed class UserManagerVoucherStatusWindow : Window
         _table.Columns.Add(new DataGridTextColumn
         {
             Header = "البيانات المستخدمة (بايت)",
-            Binding = new Binding("UsedBytes") { StringFormat = "N0" },
+            Binding = new Binding("UsedBytes")
+            {
+                StringFormat = "N0", ConverterCulture = CultureInfo.InvariantCulture
+            },
             Width = new DataGridLength(1.5, DataGridLengthUnitType.Star)
         });
         _table.Columns.Add(new DataGridTextColumn
         {
             Header = "Transfer Limit (بايت)",
-            Binding = new Binding("TransferLimit") { StringFormat = "N0" },
+            Binding = new Binding("TransferLimit")
+            {
+                StringFormat = "N0", ConverterCulture = CultureInfo.InvariantCulture
+            },
             Width = new DataGridLength(1.5, DataGridLengthUnitType.Star)
         });
         Grid.SetRow(_table, 2);
@@ -196,9 +204,10 @@ internal sealed class UserManagerVoucherStatusWindow : Window
     {
         _page = Math.Clamp(_page, 0, Math.Max(0, _pager.Pages - 1));
         _table.ItemsSource = _pager.Page(_page);
-        _count.Text = $"{_pager.Count:N0} كرت";
+        _count.Text = _pager.Count.ToString("N0", CultureInfo.InvariantCulture) + " كرت";
         _pages.Text = _pager.Pages == 0 ? "لا توجد نتائج" :
-            $"صفحة {_page + 1:N0} من {_pager.Pages:N0}";
+            "صفحة " + (_page + 1).ToString("N0", CultureInfo.InvariantCulture) +
+            " من " + _pager.Pages.ToString("N0", CultureInfo.InvariantCulture);
         _previous.IsEnabled = _page > 0;
         _next.IsEnabled = _page + 1 < _pager.Pages;
     }

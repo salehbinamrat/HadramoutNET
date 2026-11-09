@@ -158,6 +158,7 @@ internal static class VoucherReconciliationPrompt
         grid.Children.Add(footer);
         window.Closed += (_, _) => input.Clear();
         window.Content = grid;
+        window.SourceInitialized += (_, _) => WindowWorkArea.Fit(window);
         return window.ShowDialog() == true ? request : null;
     }
 }

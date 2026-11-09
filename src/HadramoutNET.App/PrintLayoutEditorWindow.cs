@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using HadramoutNET.Core.Printing;
+using HadramoutNET.Core.Visual;
 
 namespace HadramoutNET.App;
 
@@ -38,16 +39,26 @@ internal static class PrintLayoutEditorWindow
         for (int i = 0; i < 11; i++)
             form.RowDefinitions.Add(new RowDefinition { Height = new GridLength(42) });
 
-        static TextBox Numeric(double value) => new()
+        static TextBox Numeric(double value)
         {
-            Text = value.ToString("G17", CultureInfo.InvariantCulture),
-            Height = 32, MinWidth = 160, MaxLength = 30
-        };
-        static TextBox Integer(int value) => new()
+            var input = new TextBox
+            {
+                Text = value.ToString("G17", CultureInfo.InvariantCulture),
+                Height = 32, MinWidth = 160, MaxLength = 30
+            };
+            TechnicalTextInput.Attach(input);
+            return input;
+        }
+        static TextBox Integer(int value)
         {
-            Text = value.ToString(CultureInfo.InvariantCulture),
-            Height = 32, MinWidth = 160, MaxLength = 8
-        };
+            var input = new TextBox
+            {
+                Text = value.ToString(CultureInfo.InvariantCulture),
+                Height = 32, MinWidth = 160, MaxLength = 8
+            };
+            TechnicalTextInput.Attach(input);
+            return input;
+        }
 
         static ComboBox Choice(string value, params (string Label, string Key)[] options)
         {
@@ -131,16 +142,14 @@ internal static class PrintLayoutEditorWindow
 
         static double ParseNumber(TextBox field)
         {
-            if (!double.TryParse(field.Text.Trim(), NumberStyles.Float,
-                    CultureInfo.InvariantCulture, out double value) ||
+            if (!TechnicalNumberParser.TryFiniteDouble(field.Text, out double value) ||
                 !double.IsFinite(value))
                 throw new PrintLayoutException("أدخل قيمة رقمية صحيحة ومحدودة.");
             return value;
         }
         static int ParseCount(TextBox field)
         {
-            if (!int.TryParse(field.Text.Trim(), NumberStyles.None,
-                    CultureInfo.InvariantCulture, out int value))
+            if (!TechnicalNumberParser.TryUnsignedInt(field.Text, out int value))
                 throw new PrintLayoutException("أدخل عددا صحيحا للصفوف والأعمدة.");
             return value;
         }
@@ -194,6 +203,7 @@ internal static class PrintLayoutEditorWindow
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             Content = content
         };
+        dialog.SourceInitialized += (_, _) => WindowWorkArea.Fit(dialog);
         return dialog.ShowDialog() == true ? chosen : null;
     }
 }

@@ -317,11 +317,13 @@
                         <WrapPanel Grid.Row="1" FlowDirection="RightToLeft" Margin="0,0,0,8">
                             <StackPanel Margin="5">
                                 <TextBlock Text="الكمية"/>
-                                <TextBox x:Name="QtyBox" Width="95" Text="20"/>
+                                <TextBox x:Name="QtyBox" Width="95" Text="20" FlowDirection="LeftToRight" Language="en-US"
+                                       TextChanged="TechnicalNumericInput_TextChanged"/>
                             </StackPanel>
                             <StackPanel Margin="5">
                                 <TextBlock Text="طول الرقم"/>
-                                <TextBox x:Name="CardLengthBox" Width="95" Text="8"/>
+                                <TextBox x:Name="CardLengthBox" Width="95" Text="8" FlowDirection="LeftToRight" Language="en-US"
+                                       TextChanged="TechnicalNumericInput_TextChanged"/>
                             </StackPanel>
                             <StackPanel Margin="5">
                                 <TextBlock Text="صيغة الدخول"/>
@@ -361,7 +363,8 @@
                             </StackPanel>
                             <StackPanel Margin="5">
                                 <TextBlock Text="طول كلمة المرور"/>
-                                <TextBox x:Name="PasswordLengthBox" Width="115" Text="6"/>
+                                <TextBox x:Name="PasswordLengthBox" Width="115" Text="6" FlowDirection="LeftToRight" Language="en-US"
+                                       TextChanged="TechnicalNumericInput_TextChanged"/>
                             </StackPanel>
                             <StackPanel Margin="5">
                                 <TextBlock Text="أحرف كلمة المرور"/>
@@ -370,7 +373,8 @@
                             </StackPanel>
                             <StackPanel Margin="5">
                                 <TextBlock Text="بداية الترقيم"/>
-                                <TextBox x:Name="StartSequenceBox" Width="115" Text="1"/>
+                                <TextBox x:Name="StartSequenceBox" Width="115" Text="1" FlowDirection="LeftToRight" Language="en-US"
+                                       TextChanged="TechnicalNumericInput_TextChanged"/>
                             </StackPanel>
                             <StackPanel Margin="5">
                                 <TextBlock Text="صيغة الترقيم"/>
@@ -384,11 +388,13 @@
                             </StackPanel>
                             <StackPanel Margin="5">
                                 <TextBlock Text="السعر"/>
-                                <TextBox x:Name="CardPriceBox" Width="100" Text="10.5"/>
+                                <TextBox x:Name="CardPriceBox" Width="100" Text="10.5" FlowDirection="LeftToRight" Language="en-US"
+                                       TextChanged="TechnicalNumericInput_TextChanged"/>
                             </StackPanel>
                             <StackPanel Margin="5">
                                 <TextBlock Text="السعة"/>
-                                <TextBox x:Name="CardCapacityBox" Width="100" Text="512"/>
+                                <TextBox x:Name="CardCapacityBox" Width="100" Text="512" FlowDirection="LeftToRight" Language="en-US"
+                                       TextChanged="TechnicalNumericInput_TextChanged"/>
                             </StackPanel>
                             <StackPanel Margin="5">
                                 <TextBlock Text="وحدة السعة"/>
@@ -403,15 +409,18 @@
                             </StackPanel>
                             <StackPanel Margin="5">
                                 <TextBlock Text="مدة الساعات"/>
-                                <TextBox x:Name="CardHoursBox" Width="95" Text="1"/>
+                                <TextBox x:Name="CardHoursBox" Width="95" Text="1" FlowDirection="LeftToRight" Language="en-US"
+                                       TextChanged="TechnicalNumericInput_TextChanged"/>
                             </StackPanel>
                             <StackPanel Margin="5">
                                 <TextBlock Text="مدة الدقائق"/>
-                                <TextBox x:Name="CardMinutesBox" Width="95" Text="0"/>
+                                <TextBox x:Name="CardMinutesBox" Width="95" Text="0" FlowDirection="LeftToRight" Language="en-US"
+                                       TextChanged="TechnicalNumericInput_TextChanged"/>
                             </StackPanel>
                             <StackPanel Margin="5">
                                 <TextBlock Text="الصلاحية بالأيام"/>
-                                <TextBox x:Name="CardValidityBox" Width="100" Text="7"/>
+                                <TextBox x:Name="CardValidityBox" Width="100" Text="7" FlowDirection="LeftToRight" Language="en-US"
+                                       TextChanged="TechnicalNumericInput_TextChanged"/>
                             </StackPanel>
                         </WrapPanel>
                         <DataGrid x:Name="CardGrid" Grid.Row="2"
