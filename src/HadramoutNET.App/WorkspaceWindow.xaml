@@ -420,7 +420,7 @@
                         <TextBlock Grid.Row="0" Margin="5,4,5,12"
                                    TextWrapping="Wrap" FontWeight="Bold"
                                    Foreground="{StaticResource DarkRed}"
-                                   Text="قراءة فقط من الراوتر المتصل. لا تُفصل جلسات ولا تُعطّل سيرفرات ولا يُجرى مسح للشبكة تلقائيا."/>
+                                   Text="عرض حالة الشبكة وقاعدة User Manager بالقراءة فقط؛ فصل جلسة واحدة متاح يدويا بعد تأكيدين، دون فصل جماعي أو تعطيل سيرفرات أو مسح تلقائي."/>
                         <TabControl Grid.Row="1" FontFamily="Arial">
                             <TabItem Header="سيرفرات Hotspot">
                                 <Grid Margin="9">
