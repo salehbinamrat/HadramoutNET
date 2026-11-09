@@ -39,6 +39,8 @@ public static class CardArtPresetCodec
             ["card.qr_mode"] = JsonSerializer.SerializeToElement(value.QrMode),
             ["card.qr_login_url"] = JsonSerializer.SerializeToElement(value.QrLoginUrl),
             ["card.qr_size_mm"] = JsonSerializer.SerializeToElement(value.QrSizeMm),
+            ["card.background_mode"] = JsonSerializer.SerializeToElement(value.BackgroundMode),
+            ["card.background_data"] = JsonSerializer.SerializeToElement(value.BackgroundData ?? ""),
             ["card.positions"] = JsonSerializer.SerializeToElement(
                 (value.Positions ?? CardArtwork.DefaultPositions)
                     .ToDictionary(kv => kv.Key, kv => new[] { kv.Value.X, kv.Value.Y },
@@ -72,6 +74,8 @@ public static class CardArtPresetCodec
             QrMode = ReadText(values, "card.qr_mode", defaultOptions.QrMode),
             QrLoginUrl = ReadText(values, "card.qr_login_url", defaultOptions.QrLoginUrl),
             QrSizeMm = ReadNumber(values, "card.qr_size_mm", defaultOptions.QrSizeMm),
+            BackgroundMode = ReadText(values, "card.background_mode", defaultOptions.BackgroundMode),
+            BackgroundData = ReadBackground(values),
             Positions = ReadPositions(values)
         };
         Validate(options);
@@ -81,6 +85,9 @@ public static class CardArtPresetCodec
     public static void Validate(CardArtOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
+        if (options.BackgroundMode is not ("stretch" or "fit" or "fill" or "tile"))
+            throw new PrintLayoutException("وضع صورة خلفية الكرت غير مدعوم.");
+        _ = CardBackgroundAsset.Decode(options.BackgroundData);
         if (options.QrMode is not ("username" or "credentials" or "login_url"))
             throw new PrintLayoutException("نوع رمز QR غير مدعوم.");
         if (!double.IsFinite(options.QrSizeMm) ||
@@ -104,6 +111,15 @@ public static class CardArtPresetCodec
                     point.X is < 0 or > 280 || point.Y is < 0 or > 130)
                     throw new PrintLayoutException("موضع عنصر في تصميم الكرت غير صالح.");
             }
+    }
+
+    private static string? ReadBackground(IReadOnlyDictionary<string, JsonElement> values)
+    {
+        if (!values.TryGetValue("card.background_data", out JsonElement raw))
+            return null;
+        if (raw.ValueKind != JsonValueKind.String)
+            throw new PrintLayoutException("بيانات صورة الخلفية غير صالحة.");
+        return raw.GetString();
     }
 
     private static bool ReadBool(
