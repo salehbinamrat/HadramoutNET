@@ -77,9 +77,12 @@ real existing installations still require acceptance.
    to these APIs only after real RouterOS and original license acceptance;
    prove paid renewal, network failures and multiple Windows users without
    exposing device fingerprints or resetting trial history.
-3. Integrate RouterOS login, user-visible activation and periodic online
-   re-verification. Do not automatically claim at startup; require a user
-   activation action. Paid checks must fail closed if overdue.
+3. PaidLicenseSession and PaidLicenseCoordinator now implement the core signed
+   check/recheck and explicitly requested first claim: 30-minute check, 20-second
+   grace, 60-second denied retry and fail-closed overdue/network outcomes.
+   **Still required:** real RouterOS and WPF login wiring, user activation UI,
+   monotonic Stopwatch feeding, protected trial start/persistence and real-
+   Windows acceptance. There is no automatic claim at startup.
 4. Real-machine Windows UI and integration tests for first activation,
    active/revoked/wrong-device/expired/offline signatures, the completed
    480-hour trial, clock rollback, renewal and restart, without using
