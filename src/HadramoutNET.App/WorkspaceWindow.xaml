@@ -302,7 +302,7 @@
                     </Viewbox>
                 </TabItem>
 
-                <TabItem Header="إنشاء الكروت">
+                <TabItem Header="إنشاء وطباعة الكروت">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
                         <Grid MinWidth="720" Margin="12">
                         <Grid.RowDefinitions>
@@ -312,72 +312,129 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0"
-                                   Text="توليد مسودات كروت محلية — لا ترفع إلى الراوتر تلقائيا"
+                                   Text="إنشاء وطباعة الكروت من صفحة واحدة — الرفع إلى الراوتر بتأكيد منفصل"
                                    Foreground="{StaticResource DarkRed}"
                                    FontWeight="Bold" Margin="5,4,5,11"/>
-                        <WrapPanel Grid.Row="1" FlowDirection="RightToLeft" Margin="0,0,0,8">
-                            <StackPanel Margin="5">
-                                <TextBlock Text="الكمية"/>
-                                <TextBox x:Name="QtyBox" Width="95" Text="20" FlowDirection="LeftToRight" Language="en-US"
-                                       TextChanged="TechnicalNumericInput_TextChanged"/>
-                            </StackPanel>
-                            <StackPanel Margin="5">
-                                <TextBlock Text="طول الرقم"/>
-                                <TextBox x:Name="CardLengthBox" Width="95" Text="8" FlowDirection="LeftToRight" Language="en-US"
-                                       TextChanged="TechnicalNumericInput_TextChanged"/>
-                            </StackPanel>
-                            <StackPanel Margin="5">
-                                <TextBlock Text="صيغة الدخول"/>
-                                <ComboBox x:Name="CardFormatCombo" Width="200" Height="35"
-                                          SelectedIndex="0">
-                                    <ComboBoxItem Content="اسم مستخدم فقط" Tag="code_only"/>
-                                    <ComboBoxItem Content="اسم وكلمة مرور متطابقان" Tag="code_same_password"/>
-                                    <ComboBoxItem Content="اسم وكلمة مرور مختلفان" Tag="code_password"/>
-                                </ComboBox>
-                            </StackPanel>
-                            <StackPanel Margin="5">
+                        <StackPanel Grid.Row="1" Margin="0,0,0,8" FlowDirection="RightToLeft">
+                         <UniformGrid Columns="2" Rows="1">
+                             <Border BorderBrush="{StaticResource SandBorder}" BorderThickness="1" Background="White"
+                                 CornerRadius="7" Padding="8" Margin="4">
+                             <StackPanel>
+                                 <TextBlock Text="01 — الباقة والمسار" FontWeight="Bold" FontSize="16"
+                                            Foreground="{StaticResource DarkRed}" Margin="6,3,6,7"/>
+                                 <WrapPanel FlowDirection="RightToLeft">
+<StackPanel Margin="5">
                                 <TextBlock Text="نوع الخدمة"/>
-                                <ComboBox x:Name="CardServiceCombo" Width="135" Height="35"
+                                <ComboBox x:Name="CardServiceCombo" Width="155" Height="35"
+                                           SelectionChanged="CardService_SelectionChanged"
                                           SelectedIndex="0">
                                     <ComboBoxItem Content="Hotspot" Tag="hotspot"/>
                                     <ComboBoxItem Content="PPPoE" Tag="ppp"/>
                                     <ComboBoxItem Content="User Manager 6/7" Tag="userman"/>
                                 </ComboBox>
                             </StackPanel>
-                            <StackPanel Margin="5">
+<StackPanel Margin="5">
+                                 <TextBlock Text="السيرفر (Hotspot)"/>
+                                 <ComboBox x:Name="CardServerCombo" Width="165" Height="35"
+                                           SelectedIndex="0" DropDownOpened="CardTargets_DropDownOpened">
+                                     <ComboBoxItem Content="all" Tag="all"/>
+                                 </ComboBox>
+                             </StackPanel>
+<StackPanel Margin="5">
                                 <TextBlock Text="اسم الباقة"/>
-                                <TextBox x:Name="CardProfileBox" Width="140" Text="default"/>
+                                <ComboBox x:Name="CardProfileBox" Width="170" Height="35"
+                                           Text="default" IsEditable="True"
+                                           DropDownOpened="CardTargets_DropDownOpened"/>
                             </StackPanel>
-                            <StackPanel Margin="5">
+<StackPanel Margin="5">
                                 <TextBlock Text="مالك User Manager 6"/>
                                 <TextBox x:Name="UmCustomerBox" Width="150"
                                          ToolTip="اختياري عند توفر مالك الباقة على الراوتر، إلزامي للإصدار 6 إذا لم يُحدّد المالك تلقائيا"/>
                             </StackPanel>
-                            <StackPanel Margin="5">
+<StackPanel Margin="5">
+                                 <TextBlock Text="إعدادات الباقة المحفوظة"/>
+                                 <ComboBox x:Name="CardsPackagesCombo" Width="205" Height="35"
+                                           DisplayMemberPath="Name"
+                                           SelectionChanged="CardsPackagesCombo_SelectionChanged"/>
+                             </StackPanel>
+                             <StackPanel Margin="5">
+                                 <TextBlock Text="اسم إعدادات الباقة"/>
+                                 <TextBox x:Name="CardsPackageNameBox" Width="185" Text="باقة جديدة"/>
+                             </StackPanel>
+                             <StackPanel Margin="5">
+                                 <TextBlock Text="حفظ لكل باقة"/>
+                                 <Button Content="حفظ إعدادات هذه الباقة" Height="35" Width="185"
+                                         Click="SaveCardPackage_Click"/>
+                             </StackPanel>
+                        </WrapPanel>
+                             </StackPanel>
+                         </Border>
+                             <Border BorderBrush="{StaticResource SandBorder}" BorderThickness="1" Background="White"
+                                 CornerRadius="7" Padding="8" Margin="4">
+                             <StackPanel>
+                                 <TextBlock Text="02 — اسم المستخدم وكلمة المرور" FontWeight="Bold" FontSize="16"
+                                            Foreground="{StaticResource DarkRed}" Margin="6,3,6,7"/>
+                                 <WrapPanel FlowDirection="RightToLeft">
+<StackPanel Margin="5">
+                                <TextBlock Text="صيغة الدخول"/>
+                                <ComboBox x:Name="CardFormatCombo" Width="215" Height="35"
+                                           SelectionChanged="CardFormat_SelectionChanged"
+                                          SelectedIndex="0">
+                                    <ComboBoxItem Content="اسم مستخدم فقط" Tag="code_only"/>
+                                    <ComboBoxItem Content="اسم وكلمة مرور متطابقان" Tag="code_same_password"/>
+                                    <ComboBoxItem Content="اسم وكلمة مرور مختلفان" Tag="code_password"/>
+                                </ComboBox>
+                            </StackPanel>
+<StackPanel Margin="5">
+                                <TextBlock Text="طول الرقم"/>
+                                <TextBox x:Name="CardLengthBox" Width="95" Text="8" FlowDirection="LeftToRight" Language="en-US"
+                                       TextChanged="TechnicalNumericInput_TextChanged"/>
+                            </StackPanel>
+<StackPanel Margin="5">
                                 <TextBlock Text="الحروف/الأرقام"/>
                                 <TextBox x:Name="CardAlphabetBox" Width="145"
                                          Text="0123456789"/>
                             </StackPanel>
-                            <StackPanel Margin="5">
+<StackPanel Margin="5">
                                 <TextBlock Text="بادئة اسم المستخدم"/>
                                 <TextBox x:Name="CardPrefixBox" Width="135" MaxLength="64"/>
                             </StackPanel>
-                            <StackPanel Margin="5">
+<StackPanel Margin="5">
                                 <TextBlock Text="طول كلمة المرور"/>
                                 <TextBox x:Name="PasswordLengthBox" Width="115" Text="6" FlowDirection="LeftToRight" Language="en-US"
                                        TextChanged="TechnicalNumericInput_TextChanged"/>
                             </StackPanel>
-                            <StackPanel Margin="5">
+<StackPanel Margin="5">
                                 <TextBlock Text="أحرف كلمة المرور"/>
                                 <TextBox x:Name="PasswordAlphabetBox" Width="200"
                                          Text="abcdefghijklmnopqrstuvwxyz0123456789"/>
                             </StackPanel>
-                            <StackPanel Margin="5">
+                        </WrapPanel>
+                             </StackPanel>
+                         </Border>
+                         </UniformGrid>
+                         <Grid>
+                             <Grid.ColumnDefinitions>
+                                 <ColumnDefinition Width="2*"/>
+                                 <ColumnDefinition Width="3*"/>
+                             </Grid.ColumnDefinitions>
+                             <Border Grid.Column="0" BorderBrush="{StaticResource SandBorder}" BorderThickness="1"
+                                     Background="White" CornerRadius="7" Padding="8" Margin="4">
+                                 <StackPanel>
+                                     <TextBlock Text="03 — الكمية والترقيم" FontWeight="Bold" FontSize="16"
+                                                Foreground="{StaticResource DarkRed}" Margin="6,3,6,7"/>
+                                     <WrapPanel FlowDirection="RightToLeft">
+<StackPanel Margin="5">
+                                <TextBlock Text="الكمية"/>
+                                <TextBox x:Name="QtyBox" Width="95" Text="20" FlowDirection="LeftToRight" Language="en-US"
+                                       TextChanged="TechnicalNumericInput_TextChanged"/>
+                            </StackPanel>
+<StackPanel Margin="5">
                                 <TextBlock Text="بداية الترقيم"/>
                                 <TextBox x:Name="StartSequenceBox" Width="115" Text="1" FlowDirection="LeftToRight" Language="en-US"
                                        TextChanged="TechnicalNumericInput_TextChanged"/>
                             </StackPanel>
-                            <StackPanel Margin="5">
+<StackPanel Margin="5">
                                 <TextBlock Text="صيغة الترقيم"/>
                                 <ComboBox x:Name="SequenceModeCombo" Width="130" Height="35"
                                           SelectedIndex="2">
@@ -387,17 +444,26 @@
                                     <ComboBoxItem Content="بدون أصفار" Tag="plain"/>
                                 </ComboBox>
                             </StackPanel>
-                            <StackPanel Margin="5">
+                        </WrapPanel>
+                                 </StackPanel>
+                             </Border>
+                             <Border Grid.Column="1" BorderBrush="{StaticResource SandBorder}" BorderThickness="1"
+                                     Background="White" CornerRadius="7" Padding="8" Margin="4">
+                                 <StackPanel>
+                                     <TextBlock Text="04 — بيانات الكرت وحدود الاستخدام" FontWeight="Bold"
+                                                FontSize="16" Foreground="{StaticResource DarkRed}" Margin="6,3,6,7"/>
+                                     <WrapPanel FlowDirection="RightToLeft">
+<StackPanel Margin="5">
                                 <TextBlock Text="السعر"/>
                                 <TextBox x:Name="CardPriceBox" Width="100" Text="10.5" FlowDirection="LeftToRight" Language="en-US"
                                        TextChanged="TechnicalNumericInput_TextChanged"/>
                             </StackPanel>
-                            <StackPanel Margin="5">
+<StackPanel Margin="5">
                                 <TextBlock Text="السعة"/>
                                 <TextBox x:Name="CardCapacityBox" Width="100" Text="512" FlowDirection="LeftToRight" Language="en-US"
                                        TextChanged="TechnicalNumericInput_TextChanged"/>
                             </StackPanel>
-                            <StackPanel Margin="5">
+<StackPanel Margin="5">
                                 <TextBlock Text="وحدة السعة"/>
                                 <ComboBox x:Name="CapacityUnitCombo" Width="100" Height="35"
                                           SelectedIndex="2">
@@ -408,22 +474,28 @@
                                     <ComboBoxItem Content="TB" Tag="TB"/>
                                 </ComboBox>
                             </StackPanel>
-                            <StackPanel Margin="5">
+<StackPanel Margin="5">
                                 <TextBlock Text="مدة الساعات"/>
                                 <TextBox x:Name="CardHoursBox" Width="95" Text="1" FlowDirection="LeftToRight" Language="en-US"
                                        TextChanged="TechnicalNumericInput_TextChanged"/>
                             </StackPanel>
-                            <StackPanel Margin="5">
+<StackPanel Margin="5">
                                 <TextBlock Text="مدة الدقائق"/>
                                 <TextBox x:Name="CardMinutesBox" Width="95" Text="0" FlowDirection="LeftToRight" Language="en-US"
                                        TextChanged="TechnicalNumericInput_TextChanged"/>
                             </StackPanel>
-                            <StackPanel Margin="5">
+<StackPanel Margin="5">
                                 <TextBlock Text="الصلاحية بالأيام"/>
                                 <TextBox x:Name="CardValidityBox" Width="100" Text="7" FlowDirection="LeftToRight" Language="en-US"
                                        TextChanged="TechnicalNumericInput_TextChanged"/>
                             </StackPanel>
                         </WrapPanel>
+                                     <TextBlock x:Name="CardQuotaNote" Text="حدود Hotspot لكل مستخدم؛ في PPP وUser Manager تُحدد القيود من الباقة على الراوتر."
+                                                Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="8,5,8,0" FontSize="12"/>
+                                 </StackPanel>
+                             </Border>
+                         </Grid>
+                     </StackPanel>
                         <DataGrid x:Name="CardGrid" Grid.Row="2"
                                   AutoGenerateColumns="False" IsReadOnly="True"
                                   CanUserAddRows="False" EnableRowVirtualization="True"
@@ -434,53 +506,68 @@
                                 <DataGridTextColumn Header="كلمة المرور" Binding="{Binding Password}" Width="*"/>
                             </DataGrid.Columns>
                         </DataGrid>
-                        <WrapPanel Grid.Row="3" Margin="0,10,0,0">
-                            <Button Content="توليد مسودة" Width="130" Height="36"
+                        <StackPanel Grid.Row="3" Margin="0,10,0,0">
+                         <TextBlock Text="إنشاء الكروت والرفع الموثوق إلى MikroTik" FontSize="15" FontWeight="Bold" Foreground="{StaticResource DarkRed}" Margin="8,11,8,3"/>
+                         <WrapPanel FlowDirection="RightToLeft">
+<Button Content="توليد مسودة" Width="130" Height="36"
                                     Click="GenerateCards_Click" Margin="4"
                                     Style="{StaticResource NavyReplacementButton}"/>
-                            <Button x:Name="UploadCardsButton"
+<Button Content="معاينة قبل إنشاء الكروت" Width="190" Height="36" Margin="4"
+                                 Click="PreviewBeforeCreate_Click"
+                                 ToolTip="يولّد بيانات نموذجية مؤقتة للمعاينة دون حفظ أو إرسال"
+                                 Style="{StaticResource NavyReplacementButton}"/>
+<Button x:Name="UploadCardsButton"
                                     Content="رفع إلى MikroTik بعد التحقق"
                                     Width="240" Height="36" Margin="4"
                                     IsEnabled="False" Click="UploadCards_Click"
                                     Style="{StaticResource NavyReplacementButton}"/>
-                            <Button Content="سجل رفع الكروت" Width="150" Height="36"
-                                    Margin="4" Click="ShowDeliveryAudit_Click"/>
-                            <Button x:Name="ReconcileVoucherButton"
-                                    Content="مراجعة رفع سابق (Hotspot / PPP / UM)"
-                                    Width="245" Height="36" Margin="4"
-                                    IsEnabled="False" Click="ReconcileVoucher_Click"/>
-                            <Button x:Name="VerifyUmDraftButton"
+<Button x:Name="VerifyUmDraftButton"
                                     Content="التحقق من المسودة (User Manager)"
                                     Width="240" Height="36" Margin="4"
                                     Click="VerifyUmDraft_Click"/>
-                            <Button Content="Excel" Width="95" Height="36"
-                                    Click="ExportExcel_Click" Margin="4"/>
-                            <Button Content="تخصيص تصميم الكرت" Width="175" Height="36"
+<Button x:Name="ReconcileVoucherButton"
+                                    Content="مراجعة رفع سابق (Hotspot / PPP / UM)"
+                                    Width="245" Height="36" Margin="4"
+                                    IsEnabled="False" Click="ReconcileVoucher_Click"/>
+<Button Content="سجل رفع الكروت" Width="150" Height="36"
+                                    Margin="4" Click="ShowDeliveryAudit_Click"/>
+                         </WrapPanel>
+                         <TextBlock Text="تصميم الكرت ومعاينة وطباعة الورق" FontSize="15" FontWeight="Bold" Foreground="{StaticResource DarkRed}" Margin="8,11,8,3"/>
+                         <WrapPanel FlowDirection="RightToLeft">
+<Button Content="تخصيص تصميم الكرت" Width="175" Height="36"
                                     Click="EditCardArtwork_Click" Margin="4"/>
-                            <Button Content="استيراد قالب JSON" Width="155" Height="36"
+<Button Content="استيراد قالب JSON" Width="155" Height="36"
                                     Click="ImportCardTemplate_Click" Margin="4"/>
-                            <Button Content="تصدير قالب JSON" Width="155" Height="36"
+<Button Content="تصدير قالب JSON" Width="155" Height="36"
                                     Click="ExportCardTemplate_Click" Margin="4"/>
-                            <Button Content="إعدادات تخطيط الطباعة" Width="190" Height="36"
+<Button Content="إعدادات تخطيط الطباعة" Width="190" Height="36"
                                     Click="EditPrintLayout_Click" Margin="4"/>
-                            <Button Content="معاينة الورقة" Width="145" Height="36"
+<Button Content="معاينة الورقة" Width="145" Height="36"
                                     Click="PreviewPrint_Click" Margin="4"/>
-                            <Button Content="PDF" Width="100" Height="36"
+<Button Content="PDF" Width="100" Height="36"
                                     Click="ExportPdf_Click" Margin="4"/>
-                            <Button Content="طباعة مباشرة" Width="150" Height="36"
+<Button Content="طباعة مباشرة" Width="150" Height="36"
                                     Click="PrintCards_Click" Margin="4"/>
-                            <Button Content="CSV" Width="90" Height="36"
+                         </WrapPanel>
+                         <TextBlock Text="التصدير" FontSize="15" FontWeight="Bold" Foreground="{StaticResource DarkRed}" Margin="8,11,8,3"/>
+                         <WrapPanel FlowDirection="RightToLeft">
+<Button Content="Excel" Width="95" Height="36"
+                                    Click="ExportExcel_Click" Margin="4"/>
+<Button Content="CSV" Width="90" Height="36"
                                     Click="ExportCsv_Click" Margin="4"/>
-                            <Button Content="RouterOS .rsc" Width="135" Height="36"
+<Button Content="RouterOS .rsc" Width="135" Height="36"
                                     Click="ExportScript_Click" Margin="4"/>
-                            <TextBlock x:Name="CardsNotice" VerticalAlignment="Center"
+                         </WrapPanel>
+                         <WrapPanel FlowDirection="RightToLeft" Margin="4,8,4,2">
+                             <TextBlock x:Name="CardsNotice" VerticalAlignment="Center"
                                        Foreground="{StaticResource TextMuted}"
                                        Text="0 كرت" Margin="8,0"/>
                             <TextBlock x:Name="PrintLayoutInfo" VerticalAlignment="Center"
                                        Foreground="{StaticResource DarkRed}"
                                        Text="A4 | عمودي | 15×4 كرت/ورقة | 50×19 مم"
                                        Margin="8,0"/>
-                        </WrapPanel>
+                         </WrapPanel>
+                     </StackPanel>
                     </Grid>
                     </ScrollViewer>
                 </TabItem>

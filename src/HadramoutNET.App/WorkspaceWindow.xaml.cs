@@ -49,6 +49,13 @@ public partial class WorkspaceWindow : Window
     private readonly CancellationTokenSource _cancel = new();
     private IReadOnlyList<Voucher> _generated = [];
     private VoucherDraftTarget? _draftTarget;
+    private readonly RouterCardTargetCatalog _cardTargets = new();
+    private bool _readingCardTargets;
+    private bool _reloadingCardsPackages;
+    private string _draftServer = "all";
+    private bool _uploadAttempted;
+    private IReadOnlySet<string> _acknowledgedUsernames =
+        new HashSet<string>(StringComparer.Ordinal);
     private PrintLayoutOptions _printLayout = new();
     private CardArtOptions _cardArt = new();
     private IReadOnlyDictionary<string, JsonElement> _cardExtraSettings =
@@ -355,6 +362,11 @@ public partial class WorkspaceWindow : Window
         };
         MarkSidebarSelection(key);
         if (Pages.SelectedIndex == 0) UpdateDashboardRecentActivity();
+        if (Pages.SelectedIndex == 1)
+        {
+            UpdateCreationFormOptions();
+            _ = LoadCreationTargetsAsync();
+        }
     }
 
     private void ShowDashboard_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 0;
@@ -778,6 +790,27 @@ public partial class WorkspaceWindow : Window
         return options;
     }
 
+    private void PreviewBeforeCreate_Click(object sender, RoutedEventArgs e)
+    {
+        if (_uploading || _verifyingUmDraft || !ConfirmCurrentAccess()) return;
+        try
+        {
+            CardGenerationOptions options = CurrentGenerationOptions();
+            VoucherCardMetadataOptions metadata = CurrentCardMetadataOptions();
+            _ = VoucherDraftTarget.Create(
+                Choice(CardServiceCombo), CardProfileBox.Text, UmCustomerBox.Text);
+            var sample = VoucherPreviewSample.Create(options, metadata, DateTimeOffset.Now);
+            WindowsVoucherPrinter.Preview(this, sample, _printLayout, _cardArt);
+            CardsNotice.Text = "معاينة تجريبية فقط: لم تُحفظ الأرقام ولم تُرسل إلى الراوتر؛ "
+                + "أسماء الكروت عند الإنشاء الفعلي ستختلف عن العينة.";
+        }
+        catch (Exception ex) when (ex is CardGenerationException or PrintLayoutException or
+            InvalidOperationException)
+        {
+            CardsNotice.Text = "تعذرت المعاينة قبل الإنشاء: " + ex.Message;
+        }
+    }
+
     private void GenerateCards_Click(object sender, RoutedEventArgs e)
     {
         if (_uploading || _verifyingUmDraft)
@@ -800,7 +833,10 @@ public partial class WorkspaceWindow : Window
                 metadata, DateTimeOffset.Now);
             _generated = nextDraft;
             _draftTarget = target;
+            _draftServer = SelectedCardServer();
             _published = false;
+            _uploadAttempted = false;
+            _acknowledgedUsernames = new HashSet<string>(StringComparer.Ordinal);
             _deliveryUncertain = false;
             CardGrid.ItemsSource = _generated;
             CardsNotice.Text = $"تم إنشاء {_generated.Count} مسودة؛ لم ترفع إلى MikroTik.";
@@ -831,7 +867,8 @@ public partial class WorkspaceWindow : Window
         string service = Choice(CardServiceCombo);
         string profile = CardProfileBox.Text.Trim();
         string customer = UmCustomerBox.Text.Trim();
-        if (_draftTarget is null || !_draftTarget.Matches(service, profile, customer))
+        if (_draftTarget is null || !_draftTarget.Matches(service, profile, customer) ||
+            _draftServer != SelectedCardServer())
         {
             CardsNotice.Text = "تغيرت الخدمة أو الباقة أو مالك User Manager بعد إنشاء المسودة. " +
                 "أنشئ مسودة جديدة للتأكد من هوية الجهة قبل الرفع.";
@@ -852,15 +889,17 @@ public partial class WorkspaceWindow : Window
         if (confirmed != MessageBoxResult.Yes) return;
 
         _uploading = true;
+        _uploadAttempted = true;
         UploadCardsButton.IsEnabled = false;
         CardsNotice.Text = "جارٍ فحص المستخدمين والباقة ثم الرفع بدون تكرار تلقائي...";
         try
         {
             VoucherPublishReport result = await _deliveryCoordinator.PublishAsync(
                 _session, _generated, service, profile, customer,
-                confirmed: true, _cancel.Token);
+                confirmed: true, _cancel.Token, server: _draftServer);
             if (!IsLoaded) return;
             if (result.Success) _published = true;
+            _acknowledgedUsernames = result.AddedUsernames.ToHashSet(StringComparer.Ordinal);
             if (service == "userman" && (result.Success || result.Uncertain || result.Added > 0))
             {
                 _voucherLifecycle.Invalidate();
@@ -871,7 +910,9 @@ public partial class WorkspaceWindow : Window
             UpdateDashboardRecentActivity();
             if (result.Uncertain || result.Added > 0) _deliveryUncertain = true;
             CardsNotice.Text = result.Message +
-                $" — تمت إضافة {result.Added} من {result.Attempted}.";
+                $" — تمت إضافة {result.Added} من {result.Attempted}." +
+                (!result.Success && result.Added > 0
+                    ? " ستُطبع وتُصدّر الكروت المؤكدة فقط." : "");
             if (!result.Success && (result.Added > 0 || result.Uncertain))
                 MessageBox.Show(this,
                     "الرفع غير مكتمل أو لا يمكن الجزم بنتيجة إنشاء أحد المستخدمين.\n" +
@@ -1139,22 +1180,29 @@ public partial class WorkspaceWindow : Window
     private static string Choice(ComboBox combo) =>
         (combo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "";
 
+    private string SelectedCardServer() =>
+        Choice(CardServiceCombo) == "hotspot" ?
+            (Choice(CardServerCombo) is { Length: > 0 } selected ? selected : "all") : "all";
+
+    private IReadOnlyList<Voucher> CardsForOutput()
+    {
+        if (_draftTarget is null || !_draftTarget.Matches(
+                Choice(CardServiceCombo), CardProfileBox.Text, UmCustomerBox.Text) ||
+            _draftServer != SelectedCardServer())
+            throw new CardGenerationException(
+                "تغيرت الخدمة أو الباقة أو السيرفر بعد توليد المسودة؛ أنشئ مسودة جديدة قبل الطباعة أو التصدير.");
+        return VoucherBatchOutput.Select(_generated, _uploadAttempted,
+            _published, _acknowledgedUsernames);
+    }
+
     private IReadOnlyList<IReadOnlyDictionary<string, string?>> CardRows()
     {
-        if (_generated.Count == 0)
-            throw new InvalidOperationException("أنشئ مسودة كروت قبل التصدير.");
-        if (_draftTarget is null ||
-            !_draftTarget.Matches(Choice(CardServiceCombo), CardProfileBox.Text, UmCustomerBox.Text))
-            throw new InvalidOperationException(
-                "تغيرت الخدمة أو الباقة أو مالك User Manager بعد توليد المسودة. أنشئ مسودة جديدة قبل التصدير.");
-        string service = Choice(CardServiceCombo);
-        string profile = CardProfileBox.Text.Trim();
-        string customer = UmCustomerBox.Text.Trim();
-        if (service == "userman" && customer.Length == 0 && _userManagerVersion == 6)
-            customer = _userManagerProfiles.FirstOrDefault(
-                row => string.Equals(row.Name, profile, StringComparison.Ordinal))?.Owner ?? "";
-        return VoucherExportRows.Build(_generated, service, profile, customer,
-            _userManagerVersion, _published);
+        var selected = CardsForOutput();
+        return VoucherExportRows.Build(selected, _draftTarget!.Service,
+            _draftTarget.Profile, _draftTarget.Customer,
+            _userManagerVersion,
+            _published || (_uploadAttempted && _acknowledgedUsernames.Count > 0),
+            _draftServer);
     }
 
     private void ExportExcel_Click(object sender, RoutedEventArgs e) =>
@@ -1239,10 +1287,11 @@ public partial class WorkspaceWindow : Window
         if (!ConfirmCurrentAccess()) return;
         try
         {
-            WindowsVoucherPrinter.Preview(this, _generated, _printLayout, _cardArt);
+            WindowsVoucherPrinter.Preview(this, CardsForOutput(), _printLayout, _cardArt);
             CardsNotice.Text = "اكتملت معاينة الورقة الأولى، ولم يُرسل أي أمر للطابعة.";
         }
-        catch (Exception ex) when (ex is PrintLayoutException or InvalidOperationException)
+        catch (Exception ex) when (ex is PrintLayoutException or InvalidOperationException or
+            CardGenerationException)
         {
             CardsNotice.Text = "تعذرت معاينة التخطيط: " + ex.Message;
         }
@@ -1257,14 +1306,18 @@ public partial class WorkspaceWindow : Window
     private void PrintCards_Click(object sender, RoutedEventArgs e)
     {
         if (!ConfirmCurrentAccess()) return;
-        if (_generated.Count == 0)
+        IReadOnlyList<Voucher> cards;
+        try { cards = CardsForOutput(); }
+        catch (CardGenerationException ex)
         {
-            CardsNotice.Text = "أنشئ كروتا قبل الطباعة.";
+            CardsNotice.Text = ex.Message;
             return;
         }
 
         if (MessageBox.Show(this,
-            $"سيتم عرض اختيار الطابعة لإرسال {_generated.Count} كرت في نسخة واحدة.\n" +
+            $"سيتم عرض اختيار الطابعة لإرسال {cards.Count} كرت في نسخة واحدة.\n" +
+            (cards.Count < _generated.Count
+                ? "لن تُطبع الكروت التي لم يؤكد الراوتر إضافتها.\n" : "") +
             "سيرفض البرنامج أي تعريف لا يقبل أبعاد الورق والهوامش المحددة.\n" +
             "هل تريد متابعة الطباعة؟",
             "تأكيد الطباعة المباشرة",
@@ -1274,7 +1327,7 @@ public partial class WorkspaceWindow : Window
 
         try
         {
-            var result = WindowsVoucherPrinter.Print(this, _generated, _printLayout, _cardArt);
+            var result = WindowsVoucherPrinter.Print(this, cards, _printLayout, _cardArt);
             CardsNotice.Text = result.Message;
         }
         catch (Exception)
@@ -1288,13 +1341,9 @@ public partial class WorkspaceWindow : Window
     private void ExportPdf_Click(object sender, RoutedEventArgs e)
     {
         if (!ConfirmCurrentAccess()) return;
-        if (_generated.Count == 0)
-        {
-            CardsNotice.Text = "أنشئ مسودة كروت قبل تصدير PDF.";
-            return;
-        }
         try
         {
+            IReadOnlyList<Voucher> output = CardsForOutput();
             var dialog = new SaveFileDialog
             {
                 Title = "حفظ كروت حضرموت PDF",
@@ -1305,12 +1354,12 @@ public partial class WorkspaceWindow : Window
                 OverwritePrompt = true
             };
             if (dialog.ShowDialog(this) != true) return;
-            VoucherPdfExporter.SavePdf(_generated, dialog.FileName, _printLayout, _cardArt);
+            VoucherPdfExporter.SavePdf(output, dialog.FileName, _printLayout, _cardArt);
             CardsNotice.Text = "تم حفظ PDF بمقاس " + _printLayout.Paper.ToUpperInvariant() +
                 " حسب تخطيط الطباعة المختار.";
         }
         catch (Exception ex) when (ex is IOException or PrintLayoutException or
-            InvalidOperationException or UnauthorizedAccessException)
+            InvalidOperationException or UnauthorizedAccessException or CardGenerationException)
         {
             CardsNotice.Text = "تعذر تصدير PDF: " + ex.Message;
         }
@@ -1359,6 +1408,7 @@ public partial class WorkspaceWindow : Window
                 CurrentCardMetadataOptions()))
                 settings[item.Key] = item.Value;
             settings["create.quantity"] = JsonSerializer.SerializeToElement(QtyBox.Text);
+            settings["create.server"] = JsonSerializer.SerializeToElement(SelectedCardServer());
             var legacy = new Dictionary<string, JsonElement>
             {
                 ["create.quantity"] = JsonSerializer.SerializeToElement(QtyBox.Text),
@@ -1378,6 +1428,7 @@ public partial class WorkspaceWindow : Window
             foreach (var pair in CardArtPresetCodec.ToSettings(_cardArt))
                 settings[pair.Key] = pair.Value;
             _packages.SavePackage(PackageNameBox.Text, settings);
+            CardsPackageNameBox.Text = PackageNameBox.Text;
             ReloadPackages();
             WorkspaceStatus.Text = "حُفظت إعدادات هذه الباقة في HadramoutNET فقط.";
         }
@@ -1388,12 +1439,35 @@ public partial class WorkspaceWindow : Window
         }
     }
 
+    private void SaveCardPackage_Click(object sender, RoutedEventArgs e)
+    {
+        PackageNameBox.Text = CardsPackageNameBox.Text;
+        SavePackage_Click(sender, e);
+    }
+
+    private void CardsPackagesCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_reloadingCardsPackages || PackagesGrid is null) return;
+        if (CardsPackagesCombo.SelectedItem is PackagePreset selected)
+            PackagesGrid.SelectedItem = selected;
+    }
+
     private void ReloadPackages_Click(object sender, RoutedEventArgs e) => ReloadPackages();
 
     private void ReloadPackages()
     {
         if (_packages is null) return;
-        try { PackagesGrid.ItemsSource = _packages.ListPackages(); }
+        try
+        {
+            var list = _packages.ListPackages();
+            _reloadingCardsPackages = true;
+            try
+            {
+                PackagesGrid.ItemsSource = list;
+                CardsPackagesCombo.ItemsSource = list;
+            }
+            finally { _reloadingCardsPackages = false; }
+        }
         catch (Exception) { WorkspaceStatus.Text = "تعذر قراءة الباقات المحلية."; }
     }
 
@@ -1422,6 +1496,9 @@ public partial class WorkspaceWindow : Window
             selected.Settings);
         PrintLayoutInfo.Text = DescribePrintLayout(layout);
         PackageNameBox.Text = selected.Name;
+        CardsPackageNameBox.Text = selected.Name;
+        if (!ReferenceEquals(CardsPackagesCombo.SelectedItem, selected))
+            CardsPackagesCombo.SelectedItem = selected;
         var values = selected.Settings;
         QtyBox.Text = generation.Quantity.ToString(CultureInfo.InvariantCulture);
         CardLengthBox.Text = generation.CodeLength.ToString(CultureInfo.InvariantCulture);
@@ -1444,7 +1521,125 @@ public partial class WorkspaceWindow : Window
         SelectChoice(CardFormatCombo, generation.Format);
         if (values.TryGetValue("create.service", out var service) &&
             service.ValueKind == JsonValueKind.String) SelectChoice(CardServiceCombo, service.GetString());
+        if (values.TryGetValue("create.server", out var serverValue) &&
+            serverValue.ValueKind == JsonValueKind.String)
+        {
+            string server = serverValue.GetString() ?? "all";
+            if (server != "all" && !CardServerCombo.Items.OfType<ComboBoxItem>()
+                .Any(item => item.Tag?.ToString() == server))
+                CardServerCombo.Items.Add(new ComboBoxItem { Content = server, Tag = server });
+            SelectChoice(CardServerCombo, server);
+        }
+        UpdateCreationFormOptions();
         WorkspaceStatus.Text = "استُعيدت خيارات الإنشاء والسعر والسعة والمدة والصلاحية وتصميم الطباعة لهذه الباقة.";
+    }
+
+
+    private void CardFormat_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
+        UpdateCreationFormOptions();
+
+    private void CardService_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        UpdateCreationFormOptions();
+        if (IsLoaded) _ = LoadCreationTargetsAsync();
+    }
+
+    private void CardTargets_DropDownOpened(object sender, EventArgs e)
+    {
+        if (IsLoaded) _ = LoadCreationTargetsAsync();
+    }
+
+    private void UpdateCreationFormOptions()
+    {
+        if (CardFormatCombo is null || CardServiceCombo is null ||
+            PasswordLengthBox is null || PasswordAlphabetBox is null ||
+            CardServerCombo is null || UmCustomerBox is null ||
+            CardCapacityBox is null || CapacityUnitCombo is null ||
+            CardHoursBox is null || CardMinutesBox is null || CardQuotaNote is null)
+            return;
+        bool different = Choice(CardFormatCombo) == "code_password";
+        PasswordLengthBox.IsEnabled = different;
+        PasswordAlphabetBox.IsEnabled = different;
+        string service = Choice(CardServiceCombo);
+        CardServerCombo.IsEnabled = service == "hotspot";
+        UmCustomerBox.IsEnabled = service == "userman";
+        bool hotspot = service == "hotspot";
+        CardCapacityBox.IsEnabled = hotspot;
+        CapacityUnitCombo.IsEnabled = hotspot;
+        CardHoursBox.IsEnabled = hotspot;
+        CardMinutesBox.IsEnabled = hotspot;
+        CardQuotaNote.Text = hotspot
+            ? "تُطبق حدود السعة والوقت على مستخدم Hotspot عند الرفع."
+            : "السعة والوقت الفعليان لخدمة PPP وUser Manager يأتيان من باقة الراوتر.";
+    }
+
+    private async Task LoadCreationTargetsAsync()
+    {
+        if (_readingCardTargets || !IsLoaded || !ConfirmCurrentAccess()) return;
+        string service = Choice(CardServiceCombo);
+        if (service is not ("hotspot" or "ppp" or "userman")) return;
+        _readingCardTargets = true;
+        try
+        {
+            RouterCardTargets found = await _cardTargets.ReadAsync(
+                _session, service, _cancel.Token);
+            if (!IsLoaded || service != Choice(CardServiceCombo)) return;
+            if (!found.Available)
+            {
+                CardsNotice.Text = found.Reason switch
+                {
+                    "incomplete" => "قراءة قائمة الباقات أو السيرفرات غير مكتملة؛ لم تُعتبر فارغة.",
+                    "not_installed" => "خدمة User Manager غير مثبتة على هذا الراوتر.",
+                    _ => "تعذرت قراءة الباقات أو السيرفرات؛ تحقق من صلاحيات MikroTik."
+                };
+                return;
+            }
+
+            // Read current form values AFTER the asynchronous operation.
+            // Switching saved packages must never overwrite their values.
+            string currentProfile = CardProfileBox.Text;
+            string currentServer = SelectedCardServer();
+            CardProfileBox.Items.Clear();
+            foreach (RouterCardProfile profile in found.Profiles)
+                CardProfileBox.Items.Add(profile.Name);
+            CardProfileBox.Text = currentProfile;
+            CardServerCombo.Items.Clear();
+            CardServerCombo.Items.Add(new ComboBoxItem { Content = "all", Tag = "all" });
+            foreach (string server in found.Servers)
+                CardServerCombo.Items.Add(new ComboBoxItem { Content = server, Tag = server });
+            CardServerCombo.SelectedIndex = 0;
+            if (currentServer != "all" && found.Servers.Contains(currentServer))
+                SelectChoice(CardServerCombo, currentServer);
+            else if (currentServer != "all")
+                CardsNotice.Text = "السيرفر السابق غير موجود؛ اختر السيرفر من قائمة MikroTik الحالية.";
+
+            if (service == "userman")
+            {
+                _userManagerVersion = found.UserManagerVersion;
+                if (found.UserManagerVersion == 6 && string.IsNullOrWhiteSpace(UmCustomerBox.Text))
+                {
+                    string owner = found.Profiles.FirstOrDefault(p =>
+                        string.Equals(p.Name, currentProfile, StringComparison.Ordinal))?.Owner ?? "";
+                    if (!string.IsNullOrWhiteSpace(owner)) UmCustomerBox.Text = owner;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
+        catch (InvalidOperationException)
+        {
+            if (IsLoaded) LockWorkspace();
+        }
+        catch (Exception)
+        {
+            if (IsLoaded) CardsNotice.Text = "فشلت قراءة باقات الإنشاء؛ لم تتغير الخيارات الحالية.";
+        }
+        finally
+        {
+            _readingCardTargets = false;
+            if (IsLoaded && service != Choice(CardServiceCombo) &&
+                !_cancel.IsCancellationRequested)
+                _ = LoadCreationTargetsAsync();
+        }
     }
 
     private static void SelectChoice(ComboBox combo, string? tag)

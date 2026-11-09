@@ -13,13 +13,15 @@ public sealed class VoucherExportRowsTests
             Price: 25.75m, LimitBytes: 536870912, LimitUptime: "1h30m",
             ValidityDays: 7, CreatedAt: "2026-11-09T18:45:00") };
         var row = Assert.Single(VoucherExportRows.Build(vouchers, "hotspot", "gold",
-            "", 0, false));
+            "", 0, false, server: "Hotspot-A"));
+        Assert.Equal("Hotspot-A", row["server"]);
         Assert.Equal("536870912", row["limit_bytes"]);
         Assert.Equal("1h30m", row["limit_uptime"]);
         Assert.Equal("7", row["validity_days"]);
         Assert.Equal("25.75", row["price"]);
         Assert.Equal("2026-11-09T18:45:00", row["created_at"]);
         Assert.Contains("536870912", CardExports.CsvText(new[] { row }));
+        Assert.Contains("server=\"Hotspot-A\"", CardExports.ScriptText(new[] { row }));
         Assert.Contains("limit-bytes-total=536870912", CardExports.ScriptText(new[] { row }));
         Assert.Contains("limit-uptime=\"1h30m\"", CardExports.ScriptText(new[] { row }));
     }

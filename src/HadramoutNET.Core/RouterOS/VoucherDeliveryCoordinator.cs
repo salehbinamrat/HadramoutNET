@@ -34,7 +34,8 @@ public sealed class VoucherDeliveryCoordinator(VoucherDeliveryJournal journal)
         RouterAuthorizedSession session,
         IReadOnlyList<Voucher> vouchers,
         string service, string profile, string customer,
-        bool confirmed, CancellationToken cancellationToken = default)
+        bool confirmed, CancellationToken cancellationToken = default,
+        string server = "all")
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(vouchers);
@@ -42,6 +43,11 @@ public sealed class VoucherDeliveryCoordinator(VoucherDeliveryJournal journal)
         if (!confirmed)
             return new VoucherPublishReport(false, "confirmation_required",
                 "يجب تأكيد رفع الكروت قبل الاتصال بالراوتر.",
+                vouchers.Count, 0, false, []);
+
+        if (server is null || (service != "hotspot" && server != "all"))
+            return new VoucherPublishReport(false, "invalid_server",
+                "لا يمكن تحديد سيرفر Hotspot لخدمة أخرى.",
                 vouchers.Count, 0, false, []);
 
         // If SQLite initialization or write fails, NO publisher is entered.
@@ -59,7 +65,7 @@ public sealed class VoucherDeliveryCoordinator(VoucherDeliveryJournal journal)
                     new JournalUserManagerStageAudit(_journal, attempt))
                     .ConfigureAwait(false)
                 : await _standard.PublishAsync(session, vouchers,
-                    new VoucherPublishOptions(service, profile, Confirmed: true),
+                    new VoucherPublishOptions(service, profile, Confirmed: true, Server: server),
                     cancellationToken).ConfigureAwait(false);
 
             string state = result.Success ? "accepted"
