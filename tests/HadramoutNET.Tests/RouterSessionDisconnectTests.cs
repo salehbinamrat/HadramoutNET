@@ -44,6 +44,7 @@ public sealed class RouterSessionDisconnectTests
         private readonly string _dir = Path.Combine(
             Path.GetTempPath(), "hnet-disconnect-test-" + Guid.NewGuid().ToString("N"));
         public SessionMaintenanceJournal Journal { get; }
+        public string PathName => Path.Combine(_dir, "hadramout-net.db");
 
         public TestJournal()
         {
@@ -222,7 +223,71 @@ public sealed class RouterSessionDisconnectTests
         Assert.False(result.Uncertain);
         Assert.Equal("router_rejected", result.Reason);
         Assert.DoesNotContain("secret", result.Message);
-        Assert.Equal("rejected", Assert.Single(audit.Journal.ReadRecent()).State);
+        var entry = Assert.Single(audit.Journal.ReadRecent());
+        Assert.Equal("rejected", entry.State);
+        Assert.DoesNotContain("secret", entry.ToString(), StringComparison.OrdinalIgnoreCase);
+        await session.DisposeAsync();
+        await peer;
+    }
+
+    [Fact]
+    public async Task Audit_is_persisted_before_each_network_boundary_not_only_after_acknowledgment()
+    {
+        using var audit = new TestJournal();
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        Task peer = Task.Run(async () =>
+        {
+            using var client = await listener.AcceptTcpClientAsync(timeout.Token);
+            using var stream = client.GetStream();
+            await Handshake(stream, timeout.Token);
+
+            var preflight = await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
+            Assert.Contains("/ip/hotspot/active/print", preflight);
+            Assert.Equal("started", Assert.Single(new SessionMaintenanceJournal(audit.PathName).ReadRecent()).State);
+
+            await Send(stream, "!re", "=.id=*A", "=user=voucher-001", "=address=10.0.0.12");
+            await Send(stream, "!done");
+
+            var write = await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
+            Assert.Equal("/ip/hotspot/active/remove", write[0]);
+            Assert.Equal("dispatching", Assert.Single(new SessionMaintenanceJournal(audit.PathName).ReadRecent()).State);
+            await Send(stream, "!done");
+        }, timeout.Token);
+
+        await using var session = await Connect(port, timeout.Token);
+        var result = await new RouterSessionDisconnect(audit.Journal).DisconnectAsync(
+            session, Selected, confirmed: true, timeout.Token);
+        Assert.True(result.Success);
+        await peer;
+        Assert.Equal("accepted", Assert.Single(new SessionMaintenanceJournal(audit.PathName).ReadRecent()).State);
+    }
+
+    [Fact]
+    public async Task Missing_local_audit_database_blocks_even_router_preflight()
+    {
+        using var audit = new TestJournal();
+        File.Delete(audit.PathName);
+
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        Task peer = Task.Run(async () =>
+        {
+            using var client = await listener.AcceptTcpClientAsync(timeout.Token);
+            using var stream = client.GetStream();
+            await Handshake(stream, timeout.Token);
+            await NoMoreCommands(stream);
+        }, timeout.Token);
+        await using var session = await Connect(port, timeout.Token);
+        var result = await new RouterSessionDisconnect(audit.Journal).DisconnectAsync(
+            session, Selected, confirmed: true, timeout.Token);
+        Assert.False(result.Success);
+        Assert.False(result.Uncertain);
+        Assert.Equal("audit_unavailable", result.Reason);
         await session.DisposeAsync();
         await peer;
     }
