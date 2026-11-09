@@ -95,14 +95,103 @@ internal static class WindowsVoucherPrinter
             "أُرسلت مهمة واحدة إلى قائمة انتظار Windows؛ تحقق من إخراج الطابعة الفعلي.");
     }
 
+    /// <summary>
+    /// On-screen first-sheet preview of exactly the same WPF card rectangles
+    /// and PrintLayouts positions used by the native print job. There is NO
+    /// PrintDialog, PrintDocument, printer command bar or auto-spooling path.
+    /// </summary>
+    public static void Preview(Window owner,
+        IReadOnlyList<Voucher> cards, PrintLayoutOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentNullException.ThrowIfNull(cards);
+        if (cards.Count == 0)
+            throw new PrintLayoutException("أنشئ مسودة كروت قبل معاينة الورقة.");
+        options ??= new PrintLayoutOptions();
+
+        // Validate the entire batch first, not just the visible first sheet.
+        PrintLayouts.ValidateUsernames(cards.Select(x => x.Username));
+        PrintSheetPlan plan = PrintLayouts.Plan(options, cards.Count);
+        var firstSheet = cards.Take(Math.Min(plan.PerSheet, cards.Count)).ToArray();
+        NativePrintJobContract contract = NativePrintJobContract.Create(firstSheet, options);
+
+        var pages = BuildPages(firstSheet, contract);
+        var stack = new StackPanel
+        {
+            Background = new SolidColorBrush(Color.FromRgb(224, 224, 224)),
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        foreach (FixedPage page in pages)
+        {
+            double displayedWidth = 690;
+            var viewbox = new Viewbox
+            {
+                Stretch = Stretch.Uniform,
+                Width = displayedWidth,
+                Height = displayedWidth * contract.Geometry.PageHeight / contract.Geometry.PageWidth,
+                Child = page,
+                Margin = new Thickness(10, 12, 10, 12)
+            };
+            stack.Children.Add(viewbox);
+        }
+
+        var description = new TextBlock
+        {
+            Text = $"معاينة أول ورقة فقط ({firstSheet.Length} كرت). " +
+                $"إجمالي الأوراق {plan.Sheets}، وعدد صفحات الطباعة {plan.PdfPages}. " +
+                "الطباعة لم تبدأ. هذه معاينة لقالب .NET الحالي وليست مطابقة نهائية لقالب Python.",
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(16, 12, 16, 12),
+            FontWeight = FontWeights.SemiBold
+        };
+        var contents = new DockPanel();
+        DockPanel.SetDock(description, Dock.Top);
+        contents.Children.Add(description);
+        contents.Children.Add(new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = stack
+        });
+        var window = new Window
+        {
+            Owner = owner,
+            ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Title = "معاينة تخطيط كروت حضرموت — دون إرسال إلى الطابعة",
+            FlowDirection = FlowDirection.RightToLeft,
+            Width = 850,
+            Height = 810,
+            MinWidth = 570,
+            MinHeight = 490,
+            Content = contents
+        };
+        window.ShowDialog();
+    }
+
     private static FixedDocument BuildDocument(
         IReadOnlyList<Voucher> cards, NativePrintJobContract contract)
     {
         var doc = new FixedDocument();
+        foreach (FixedPage page in BuildPages(cards, contract))
+        {
+            var content = new PageContent();
+            ((IAddChild)content).AddChild(page);
+            doc.Pages.Add(content);
+        }
+        if (doc.Pages.Count != contract.PageCount)
+            throw new InvalidOperationException("تعذر إنشاء عدد صفحات الطباعة الصحيح.");
+        return doc;
+    }
+
+    // Both native printing and preview render through this one renderer.
+    // Preview supplies a bounded first-sheet contract only.
+    private static IReadOnlyList<FixedPage> BuildPages(
+        IReadOnlyList<Voucher> cards, NativePrintJobContract contract)
+    {
+        var pages = new List<FixedPage>();
         long pageNumber = 0;
         FixedPage? fixedPage = null;
-        var background = Brushes.White;
-
         foreach (PrintPlacement placement in contract.Placements)
         {
             if (pageNumber != placement.PdfPage)
@@ -111,11 +200,9 @@ internal static class WindowsVoucherPrinter
                 {
                     Width = contract.Geometry.PageWidth * DipPerPoint,
                     Height = contract.Geometry.PageHeight * DipPerPoint,
-                    Background = background
+                    Background = Brushes.White
                 };
-                var content = new PageContent();
-                ((IAddChild)content).AddChild(fixedPage);
-                doc.Pages.Add(content);
+                pages.Add(fixedPage);
                 pageNumber = placement.PdfPage;
             }
 
@@ -129,9 +216,9 @@ internal static class WindowsVoucherPrinter
                  contract.Geometry.CardHeight) * DipPerPoint);
             fixedPage!.Children.Add(card);
         }
-        if (doc.Pages.Count != contract.PageCount)
-            throw new InvalidOperationException("تعذر إنشاء عدد صفحات الطباعة الصحيح.");
-        return doc;
+        if (pages.Count != contract.PageCount)
+            throw new InvalidOperationException("عدد صفحات معاينة الطباعة لا يطابق المخطط.");
+        return pages;
     }
 
     private static FrameworkElement RenderCard(Voucher voucher, double width, double height)
