@@ -123,7 +123,7 @@ public sealed class SessionMaintenanceJournalTests
         using var fixture = new TempDb();
         var journal = new SessionMaintenanceJournal(fixture.PathName);
         Assert.Throws<ArgumentException>(() => journal.Begin(
-            "Router", "endpoint", Selected with { RecordId = "invalid" }));
+            "Router", "endpoint", Selected with { Id = "invalid" }));
         Assert.Throws<ArgumentException>(() => journal.Begin(
             "Router", "endpoint", Selected with { Service = "All" }));
         Assert.Empty(journal.ReadRecent());
