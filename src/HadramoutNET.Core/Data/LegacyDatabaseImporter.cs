@@ -42,6 +42,58 @@ public sealed class LegacyDatabaseImporter(string targetPath)
         };
 
     /// <summary>
+    /// Explicit, read-only validation and record-count preview. Uses the same
+    /// snapshot/schema/integrity checks as Import, but never opens or creates
+    /// the independent destination database. No credentials are materialized
+    /// into a preview or included in a count.
+    /// </summary>
+    public LegacyImportReport Preview(string sourcePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
+        string input = Path.GetFullPath(sourcePath);
+        if (string.Equals(input, _targetPath, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("لا يمكن معاينة قاعدة البرنامج الهدف بوصفها مصدر حضرموت.");
+        if (!File.Exists(input))
+            throw new FileNotFoundException("قاعدة بيانات حضرموت غير موجودة.", input);
+
+        using var source = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = input, Mode = SqliteOpenMode.ReadOnly,
+            Cache = SqliteCacheMode.Private, Pooling = false, DefaultTimeout = 10
+        }.ToString());
+        source.Open();
+        using var snapshot = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = ":memory:", Cache = SqliteCacheMode.Private,
+            Pooling = false
+        }.ToString());
+        snapshot.Open();
+        source.BackupDatabase(snapshot);
+        ValidateSource(snapshot);
+
+        // Query only the pinned, known schema-v8 table names.
+        int Count(string table)
+        {
+            using var command = snapshot.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM " + table;
+            return checked(Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture));
+        }
+
+        int safeSettings = 0;
+        using (var command = snapshot.CreateCommand())
+        {
+            command.CommandText = "SELECT key FROM settings";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+                if (SafeSetting(reader.GetString(0))) safeSettings = checked(safeSettings + 1);
+        }
+
+        return new LegacyImportReport(
+            Count("routers"), Count("packages"), Count("batches"),
+            Count("cards"), Count("router_presets"), Count("activity"), safeSettings);
+    }
+
+    /// <summary>
     /// Source is read-only and its WAL is included via SQLite backup into
     /// memory; the original database and its saved passwords are never written
     /// or copied into a temporary file on disk.
