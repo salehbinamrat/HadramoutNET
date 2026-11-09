@@ -342,6 +342,11 @@ public partial class WorkspaceWindow : Window
 
     private void GenerateCards_Click(object sender, RoutedEventArgs e)
     {
+        if (_uploading)
+        {
+            CardsNotice.Text = "لا يمكن استبدال المسودة أثناء تنفيذ عملية رفع.";
+            return;
+        }
         if (!ConfirmCurrentAccess()) return;
         try
         {
