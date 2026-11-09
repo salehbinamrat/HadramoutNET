@@ -46,6 +46,13 @@ public static class CardArtPresetCodec
             ["card.qr_size_mm"] = JsonSerializer.SerializeToElement(value.QrSizeMm),
             ["card.background_mode"] = JsonSerializer.SerializeToElement(value.BackgroundMode),
             ["card.background_data"] = JsonSerializer.SerializeToElement(value.BackgroundData ?? ""),
+            ["card.font_size"] = JsonSerializer.SerializeToElement(value.FontSize),
+            ["card.font_bold"] = JsonSerializer.SerializeToElement(value.FontBold),
+            ["card.font_color"] = JsonSerializer.SerializeToElement(value.FontColor),
+            ["card.color.username"] = JsonSerializer.SerializeToElement(value.UsernameColor),
+            ["card.border_color"] = JsonSerializer.SerializeToElement(value.BorderColor),
+            ["card.border_width"] = JsonSerializer.SerializeToElement(value.BorderWidth),
+            ["card.border_radius"] = JsonSerializer.SerializeToElement(value.BorderRadius),
             ["card.positions"] = JsonSerializer.SerializeToElement(
                 (value.Positions ?? CardArtwork.DefaultPositions)
                     .ToDictionary(kv => kv.Key, kv => new[] { kv.Value.X, kv.Value.Y },
@@ -86,15 +93,37 @@ public static class CardArtPresetCodec
             QrSizeMm = ReadNumber(values, "card.qr_size_mm", defaultOptions.QrSizeMm),
             BackgroundMode = ReadText(values, "card.background_mode", defaultOptions.BackgroundMode),
             BackgroundData = ReadBackground(values),
+            FontSize = ReadNumber(values, "card.font_size", defaultOptions.FontSize),
+            FontBold = ReadBool(values, "card.font_bold", defaultOptions.FontBold),
+            FontColor = ReadText(values, "card.font_color", defaultOptions.FontColor),
+            UsernameColor = ReadText(values, "card.color.username", defaultOptions.UsernameColor),
+            BorderColor = ReadText(values, "card.border_color", defaultOptions.BorderColor),
+            BorderWidth = ReadNumber(values, "card.border_width", defaultOptions.BorderWidth),
+            BorderRadius = ReadNumber(values, "card.border_radius", defaultOptions.BorderRadius),
             Positions = ReadPositions(values)
         };
         Validate(options);
         return options;
     }
 
+    /// <summary>Prevent malformed RGB values entering either WPF or PDF converters.</summary>
+    public static bool ValidHexColor(string? value) =>
+        value is { Length: 7 } && value[0] == '#' &&
+        value.Skip(1).All(char.IsAsciiHexDigit);
+
     public static void Validate(CardArtOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
+        if (!double.IsFinite(options.FontSize) ||
+            options.FontSize is < 1 or > 300 ||
+            !double.IsFinite(options.BorderWidth) ||
+            options.BorderWidth is < 0 or > 100 ||
+            !double.IsFinite(options.BorderRadius) ||
+            options.BorderRadius is < 0 or > 100 ||
+            !ValidHexColor(options.FontColor) ||
+            !ValidHexColor(options.UsernameColor) ||
+            !ValidHexColor(options.BorderColor))
+            throw new PrintLayoutException("حجم أو لون الخط أو الإطار غير صالح.");
         if (options.BackgroundMode is not ("stretch" or "fit" or "fill" or "tile"))
             throw new PrintLayoutException("وضع صورة خلفية الكرت غير مدعوم.");
         _ = CardBackgroundAsset.Decode(options.BackgroundData);
