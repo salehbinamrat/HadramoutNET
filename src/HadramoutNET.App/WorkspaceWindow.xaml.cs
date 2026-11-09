@@ -827,10 +827,8 @@ public partial class WorkspaceWindow : Window
         if (picker.ShowDialog(this) != true) return;
         try
         {
-            byte[] template = CardTemplateExchange.Export(
-                _cardArt, _cardExtraSettings);
-            AtomicExportFile.Write(picker.FileName,
-                staged => File.WriteAllBytes(staged, template));
+            CardTemplateExchange.SaveFile(
+                picker.FileName, _cardArt, _cardExtraSettings);
             CardsNotice.Text = "حُفظ ملف تصميم الكرت دون بيانات كروت المستخدمين أو كلمات المرور.";
         }
         catch (Exception ex) when (ex is PrintLayoutException or IOException or
