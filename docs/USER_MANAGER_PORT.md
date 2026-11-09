@@ -13,8 +13,8 @@ Hadramout source and trial files are untouched.
   Missing services, denied permissions, partial user reads, and genuine
   empty tables have distinct results.
 - The WPF Manager 6/7 tab shows the remote users and profiles in RTL layout.
-  Local dashboard UM count is still explicitly v6-only until a separate
-  v7 dashboard-count regression is implemented.
+  The dashboard now counts UM6 and falls back to UM7 only when the UM6
+  command is unsupported. Permission failures remain unavailable, not zero.
 
 ## Confirmed User Manager voucher creation
 

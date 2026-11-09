@@ -19,7 +19,7 @@ yet a complete recreation of all the original Python program's services.
 ## Live screens currently wired
 
 - Dashboard: router name, RouterOS version, uptime, CPU, RAM, Hotspot
-  voucher count, active Hotspot, PPP active and UM6 user counts.
+  voucher count, active Hotspot, PPP active and UM6/UM7 user counts.
   Unavailable/forbidden services appear as **unavailable**, not zero.
 - Hotspot users: read-only table with name, profile, disabled, limits.
   Passwords are not requested from RouterOS.
