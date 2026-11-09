@@ -295,6 +295,37 @@ public partial class WorkspaceWindow : Window
     private void ExportExcel_Click(object sender, RoutedEventArgs e) =>
         ExportFile("Excel|*.xlsx", ".xlsx", (data, path) =>
             ExcelExporter.SaveExcel(data, path, "كروت حضرموت"));
+    private void PrintCards_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmCurrentAccess()) return;
+        if (_generated.Count == 0)
+        {
+            CardsNotice.Text = "أنشئ كروتا قبل الطباعة.";
+            return;
+        }
+
+        if (MessageBox.Show(this,
+            $"سيتم عرض اختيار الطابعة لإرسال {_generated.Count} كرت في نسخة واحدة.\n" +
+            "سيرفض البرنامج أي تعريف لا يقبل أبعاد الورق والهوامش المحددة.\n" +
+            "هل تريد متابعة الطباعة؟",
+            "تأكيد الطباعة المباشرة",
+            MessageBoxButton.YesNo, MessageBoxImage.Question,
+            MessageBoxResult.No) != MessageBoxResult.Yes)
+            return;
+
+        try
+        {
+            var result = WindowsVoucherPrinter.Print(this, _generated);
+            CardsNotice.Text = result.Message;
+        }
+        catch (Exception)
+        {
+            // A driver may already have accepted an uncertain job.
+            // Never issue an automatic second print.
+            CardsNotice.Text = "تعذرت الطباعة أو رفض التعريف المقاسات. راجع قائمة انتظار Windows قبل إعادة المحاولة.";
+        }
+    }
+
     private void ExportPdf_Click(object sender, RoutedEventArgs e)
     {
         if (!ConfirmCurrentAccess()) return;
