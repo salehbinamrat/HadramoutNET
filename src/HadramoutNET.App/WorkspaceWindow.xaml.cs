@@ -29,6 +29,7 @@ public partial class WorkspaceWindow : Window
     private readonly RouterDashboardReader _dashboard = new();
     private readonly RouterAccountDirectory _directory = new();
     private readonly RouterNetworkInventory _networkInventory = new();
+    private readonly RouterSessionDisconnect _sessionDisconnect = new();
     private readonly DispatcherTimer _heartbeat = new();
     private readonly CancellationTokenSource _cancel = new();
     private IReadOnlyList<Voucher> _generated = [];
@@ -46,6 +47,7 @@ public partial class WorkspaceWindow : Window
     private bool _readingNetworkServers;
     private bool _readingNetworkNeighbors;
     private bool _readingNetworkSessions;
+    private bool _disconnectingSession;
     private IReadOnlyList<NetworkNeighbor> _neighbors = [];
     private bool _legacyBusy;
     private bool _legacyReading;
@@ -752,6 +754,86 @@ public partial class WorkspaceWindow : Window
 
     private void RefreshSessions_Click(object sender, RoutedEventArgs e) =>
         _ = LoadNetworkSessionsAsync();
+
+    private async void DisconnectSession_Click(object sender, RoutedEventArgs e)
+    {
+        if (_disconnectingSession || _readingNetworkSessions ||
+            !IsLoaded || !ConfirmCurrentAccess()) return;
+        if (SessionsGrid.SelectedItem is not NetworkActiveSession selected)
+        {
+            SessionsNotice.Text = "اختر جلسة واحدة من القائمة أولا.";
+            return;
+        }
+
+        // Two explicit, manual confirmations: the action affects a live
+        // customer connection and cannot be undone by a database rollback.
+        if (MessageBox.Show(this,
+            "سيُقطع اتصال جلسة واحدة فقط:\\n" +
+            "الخدمة: " + selected.Service + "\\n" +
+            "المستخدم: " + selected.Username + "\\n" +
+            "عنوان IP: " + selected.Address + "\\n" +
+            "لا يتم فصل جلسات أخرى أو تنفيذ أي إجراء تلقائي. هل تريد المتابعة؟",
+            "التحقق من الجلسة المحددة",
+            MessageBoxButton.YesNo, MessageBoxImage.Warning,
+            MessageBoxResult.No) != MessageBoxResult.Yes)
+            return;
+
+        if (MessageBox.Show(this,
+            "تأكيد نهائي: فصل جلسة " + selected.Username +
+            " بالمعرف " + selected.Id + "؟\\n" +
+            "سيتحقق البرنامج من هوية الجلسة على الراوتر قبل الإرسال. " +
+            "إذا انقطع الاتصال أثناء التنفيذ فقد تكون النتيجة غير مؤكدة ولن يعيد الأمر تلقائيا.",
+            "تأكيد فصل اتصال المشترك",
+            MessageBoxButton.YesNo, MessageBoxImage.Warning,
+            MessageBoxResult.No) != MessageBoxResult.Yes)
+            return;
+
+        _disconnectingSession = true;
+        DisconnectSessionButton.IsEnabled = false;
+        SessionsGrid.IsEnabled = false;
+        SessionsNotice.Text = "جارٍ التحقق من الجلسة وإرسال أمر فصل واحد إذا تطابقت...";
+        try
+        {
+            SessionDisconnectResult result = await _sessionDisconnect.DisconnectAsync(
+                _session, selected, confirmed: true, _cancel.Token);
+            if (!IsLoaded) return;
+            // The view is now potentially stale even if the acknowledgment
+            // was lost. Require an explicit refresh before another action.
+            if (result.Success || result.Uncertain)
+                SessionsGrid.ItemsSource = null;
+            SessionsNotice.Text = result.Message;
+            if (!ConfirmCurrentAccess()) return;
+        }
+        catch (OperationCanceledException) when (_cancel.IsCancellationRequested)
+        {
+            if (IsLoaded)
+            {
+                SessionsGrid.ItemsSource = null;
+                SessionsNotice.Text = "أُلغيت العملية أثناء التنفيذ؛ قد تكون وصلت للراوتر. " +
+                    "تحقق من الجلسات قبل أي إعادة.";
+            }
+        }
+        catch (Exception)
+        {
+            if (IsLoaded)
+            {
+                SessionsGrid.ItemsSource = null;
+                SessionsNotice.Text = "تعذر التحقق من نتيجة العملية؛ لا تعِد الفصل " +
+                    "حتى تحدّث القائمة وتتحقق من الراوتر.";
+            }
+        }
+        finally
+        {
+            _disconnectingSession = false;
+            if (IsLoaded)
+            {
+                DisconnectSessionButton.IsEnabled = true;
+                SessionsGrid.IsEnabled = true;
+            }
+        }
+    }
+
+
 
     private async Task LoadNetworkServersAsync()
     {
