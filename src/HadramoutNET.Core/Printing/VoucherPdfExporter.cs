@@ -93,13 +93,25 @@ public static class VoucherPdfExporter
                     double width = plan.Layout.CardWidth, height = plan.Layout.CardHeight;
                     var bg = new XSolidBrush(Color(art.Background));
                     var accent = new XSolidBrush(Color(art.Accent));
-                    var gold = new XPen(Color(art.Border), 0.45);
+                    XPen? border = art.BorderWidthMm > 0 ?
+                        new XPen(Color(art.Border),
+                            art.BorderWidthMm * mm) : null;
 
-                    graphics!.DrawRectangle(gold, bg, x, y, width, height);
+                    graphics!.DrawRectangle((XPen?)null, bg, x, y, width, height);
                     if (backgroundImage is not null && bgAsset is not null)
                         DrawBackground(graphics, backgroundImage, bgAsset,
                             artwork.BackgroundMode, x, y, width, height);
                     graphics.DrawRectangle(accent, x, y, Math.Min(width, 1.1 * mm), height);
+                    // Stroke LAST so imported image never covers the border.
+                    if (border is not null)
+                    {
+                        if (art.BorderRadiusMm > 0)
+                            graphics.DrawRoundedRectangle(border, x, y, width, height,
+                                art.BorderRadiusMm * mm * 2,
+                                art.BorderRadiusMm * mm * 2);
+                        else
+                            graphics.DrawRectangle(border, x, y, width, height);
+                    }
 
                     foreach (CardArtText t in art.Texts)
                     {
