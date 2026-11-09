@@ -24,12 +24,17 @@ public sealed class LegacyHistoryReader(string targetPath)
         !string.IsNullOrWhiteSpace(targetPath) ? targetPath :
         throw new ArgumentException("Target path is required.", nameof(targetPath)));
 
-    public LegacyHistoryPage ReadPage(int offset, int pageSize = 100)
+    public LegacyHistoryPage ReadPage(int offset, int pageSize = 100, string? usernameSearch = null)
     {
         if (offset < 0)
             throw new ArgumentOutOfRangeException(nameof(offset));
         if (pageSize is < 1 or > 200)
             throw new ArgumentOutOfRangeException(nameof(pageSize));
+
+        // Treat the entered username as literal data: no LIKE wildcards or SQL expressions.
+        string search = (usernameSearch ?? "").Trim();
+        if (search.Length > 128)
+            throw new ArgumentException("Username search exceeds 128 characters.", nameof(usernameSearch));
 
         if (!File.Exists(_targetPath))
             return new LegacyHistoryPage(false, 0, []);
@@ -57,7 +62,11 @@ public sealed class LegacyHistoryReader(string targetPath)
         long total;
         using (var count = db.CreateCommand())
         {
-            count.CommandText = "SELECT COUNT(*) FROM legacy_cards";
+            count.CommandText = """
+                SELECT COUNT(*) FROM legacy_cards AS c
+                WHERE $search = '' OR instr(COALESCE(c.username, ''), $search) > 0
+                """;
+            count.Parameters.AddWithValue("$search", search);
             total = Convert.ToInt64(count.ExecuteScalar(), CultureInfo.InvariantCulture);
         }
 
@@ -69,8 +78,10 @@ public sealed class LegacyHistoryReader(string targetPath)
                    COALESCE(c.created_at, '')
             FROM legacy_cards AS c
             LEFT JOIN legacy_batches AS b ON b.id = c.batch_id
+            WHERE $search = '' OR instr(COALESCE(c.username, ''), $search) > 0
             ORDER BY c.id DESC LIMIT $limit OFFSET $offset
             """;
+        command.Parameters.AddWithValue("$search", search);
         command.Parameters.AddWithValue("$limit", pageSize);
         command.Parameters.AddWithValue("$offset", offset);
         using var reader = command.ExecuteReader();
