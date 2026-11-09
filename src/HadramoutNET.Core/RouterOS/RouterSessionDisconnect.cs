@@ -149,7 +149,8 @@ public sealed class RouterSessionDisconnect
         try
         {
             _journal.Complete(auditId, state, reason);
-            return new SessionDisconnectResult(success, uncertain, reason, message);
+            return new SessionDisconnectResult(success, uncertain,
+                success ? "accepted" : reason, message);
         }
         catch (Exception)
         {
