@@ -63,23 +63,20 @@ public sealed class RouterVoucherPublisher
             "/ip/hotspot/user/profile" : "/ppp/profile";
         try
         {
-            // Read ONLY usernames, not passwords. Never assume a local
-            // randomly generated token is unique on the live router.
-            var existing = await session.ReadAsync(menu + "/print",
-                new Dictionary<string, string> { [".proplist"] = "name" },
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            if (existing.Rows.Any(row => row.TryGetValue("name", out string? name) &&
-                usernames.Contains(name)))
+            // Count-first AND projected-name checks prevent a truncated or
+            // malformed RouterOS listing from falsely proving uniqueness.
+            // Never retrieve user passwords or infer missing rows as absence.
+            IReadOnlySet<string> existing = await ReadCompleteNamesAsync(
+                session, menu + "/print", cancellationToken).ConfigureAwait(false);
+            if (usernames.Overlaps(existing))
                 return Fail("duplicate_username",
                     "توجد أسماء مستخدمين من المسودة على الراوتر؛ لم يبدأ الرفع.",
                     attempted);
 
-            var profiles = await session.ReadAsync(profileMenu + "/print",
-                new Dictionary<string, string> { [".proplist"] = "name" },
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-            if (!profiles.Rows.Any(row => row.TryGetValue("name", out string? name) &&
-                string.Equals(name, options.Profile, StringComparison.Ordinal)))
+            IReadOnlySet<string> profiles = await ReadCompleteNamesAsync(
+                session, profileMenu + "/print", cancellationToken)
+                .ConfigureAwait(false);
+            if (!profiles.Contains(options.Profile))
                 return Fail("profile_missing",
                     "لم يتم العثور على الباقة المطلوبة في الراوتر؛ لم يبدأ الرفع.",
                     attempted);
@@ -136,6 +133,45 @@ public sealed class RouterVoucherPublisher
         return new VoucherPublishReport(true, "published",
             "اكتمل رفع الكروت بعد التحقق من الأسماء والباقة.",
             attempted, added.Count, false, added.ToArray());
+    }
+
+    /// <summary>
+    /// A complete snapshot is mandatory before initiating the FIRST add.
+    /// Ordinary /print without count-only cannot distinguish a complete
+    /// response from a valid but truncated set of names.
+    /// </summary>
+    private static async Task<IReadOnlySet<string>> ReadCompleteNamesAsync(
+        RouterAuthorizedSession session, string path, CancellationToken cancellationToken)
+    {
+        const int maxPreflightRows = 20000;
+        var countReply = await session.ReadAsync(path,
+            new Dictionary<string, string> { ["count-only"] = "yes" },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!countReply.Done.TryGetValue("ret", out string? countString) ||
+            !int.TryParse(countString, System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out int expected) ||
+            expected is < 0 or > maxPreflightRows ||
+            countReply.Rows.Count != 0)
+            throw new InvalidOperationException(
+                "Invalid or excessive RouterOS count-only preflight.");
+
+        var namesReply = await session.ReadAsync(path,
+            new Dictionary<string, string> { [".proplist"] = "name" },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (namesReply.Rows.Count != expected)
+            throw new InvalidOperationException(
+                "Incomplete RouterOS preflight: account count changed.");
+
+        var unique = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var row in namesReply.Rows)
+        {
+            if (!row.TryGetValue("name", out string? name) ||
+                string.IsNullOrWhiteSpace(name) || name.Length > 128 ||
+                name.Any(char.IsControl) || !unique.Add(name))
+                throw new InvalidOperationException(
+                    "Missing, duplicated, or malformed RouterOS account name.");
+        }
+        return unique;
     }
 
     private static VoucherPublishReport Fail(string reason, string message, int attempted) =>
