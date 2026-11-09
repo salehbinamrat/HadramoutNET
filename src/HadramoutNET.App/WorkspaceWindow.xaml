@@ -227,6 +227,10 @@
                                     Click="VerifyUmDraft_Click"/>
                             <Button Content="Excel" Width="95" Height="36"
                                     Click="ExportExcel_Click" Margin="4"/>
+                            <Button Content="إعدادات تخطيط الطباعة" Width="190" Height="36"
+                                    Click="EditPrintLayout_Click" Margin="4"/>
+                            <Button Content="معاينة الورقة" Width="145" Height="36"
+                                    Click="PreviewPrint_Click" Margin="4"/>
                             <Button Content="PDF" Width="100" Height="36"
                                     Click="ExportPdf_Click" Margin="4"/>
                             <Button Content="طباعة مباشرة" Width="150" Height="36"
@@ -238,6 +242,10 @@
                             <TextBlock x:Name="CardsNotice" VerticalAlignment="Center"
                                        Foreground="{StaticResource TextMuted}"
                                        Text="0 كرت" Margin="8,0"/>
+                            <TextBlock x:Name="PrintLayoutInfo" VerticalAlignment="Center"
+                                       Foreground="{StaticResource DarkRed}"
+                                       Text="A4 | عمودي | 15×4 كرت/ورقة | 50×19 مم"
+                                       Margin="8,0"/>
                         </WrapPanel>
                     </Grid>
                 </TabItem>
