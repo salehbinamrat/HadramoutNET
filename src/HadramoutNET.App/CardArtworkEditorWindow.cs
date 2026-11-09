@@ -264,8 +264,8 @@ internal static class CardArtworkEditorWindow
                 if (key is not ("username" or "password"))
                 {
                     string selected = current.LayerColors is not null &&
-                        current.LayerColors.TryGetValue(key, out string? color) ?
-                            color : "";
+                        current.LayerColors.TryGetValue(key, out string? storedColor) ?
+                            storedColor : "";
                     row.Children.Add(new TextBlock { Text = "لون",
                         VerticalAlignment = VerticalAlignment.Center });
                     var color = new TextBox { Width = 100, Height = 28,
