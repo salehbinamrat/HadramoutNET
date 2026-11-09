@@ -462,8 +462,12 @@ public partial class WorkspaceWindow : Window
                 "أنشئ مسودة جديدة للتأكد من هوية الجهة قبل الرفع.";
             return;
         }
+        string quotaNotice = service == "hotspot"
+            ? "ستُطبّق حدود السعة والمدة الموجودة في كل كرت على مستخدم Hotspot.\n"
+            : "تنبيه: السعة والمدة المطبوعة لا تُفرض على PPP أو User Manager من هذا المسار. تحقق من حدود الباقة في الراوتر.\n";
         MessageBoxResult confirmed = MessageBox.Show(this,
             $"سيُرسل {_generated.Count} كرت إلى {service} بالباقة «{profile}».\n" +
+            quotaNotice +
             "سيُفحص عدم التكرار وصلاحية الباقة قبل البدء.\n" +
             "قد يحتاج أي فشل جزئي إلى مراجعة الكروت الموجودة يدويا.\n" +
             "هل تؤكد رفع هذه المسودة؟",
