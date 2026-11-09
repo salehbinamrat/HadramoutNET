@@ -313,4 +313,41 @@ public sealed class LegacyDatabaseImporterTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Fact]
+    public void Imported_history_search_is_literal_paginated_and_never_exposes_passwords()
+    {
+        string root = NewFolder();
+        try
+        {
+            string source = Path.Combine(root, "nidi_cards.db");
+            string target = Path.Combine(root, "net", "hadramout-net.db");
+            Fixture(source);
+            using (var db = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = source, Pooling = false }.ToString()))
+            {
+                db.Open();
+                Exec(db, """
+                    INSERT INTO cards(id,batch_id,sequence,username,password)
+                    VALUES(12,5,'0002','001230','private-secret'),
+                          (13,5,'0003','other-user','private-secret-2')
+                    """);
+            }
+            new LegacyDatabaseImporter(target).Import(source);
+            var archive = new LegacyHistoryReader(target);
+
+            var first = archive.ReadPage(0, 1, usernameSearch: " 00123 ");
+            Assert.Equal(2, first.Total);
+            Assert.Equal("001230", Assert.Single(first.Cards).Username);
+            Assert.Equal("00123", Assert.Single(
+                archive.ReadPage(1, 1, usernameSearch: "00123").Cards).Username);
+            Assert.Empty(archive.ReadPage(0, 10, usernameSearch: "%").Cards);
+            Assert.Empty(archive.ReadPage(0, 10, usernameSearch: "' OR 1=1 --").Cards);
+            Assert.Equal(3, archive.ReadPage(0, 10, usernameSearch: "").Total);
+            Assert.DoesNotContain("private-secret", first.ToString());
+            Assert.Throws<ArgumentException>(() =>
+                archive.ReadPage(0, 10, usernameSearch: new string('x', 129)));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
 }
