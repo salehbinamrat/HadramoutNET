@@ -9,6 +9,15 @@ on:
       - main
   workflow_dispatch:
 
+# Push and pull_request from the same migration branch can both start
+# this workflow. Keep only the latest run for that branch (including a
+# superseded commit), while the Core and Release jobs still run in parallel
+# *within* the surviving run and are evaluated on the same SHA.
+# This conserves private-repository Windows runner compute allowance.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
