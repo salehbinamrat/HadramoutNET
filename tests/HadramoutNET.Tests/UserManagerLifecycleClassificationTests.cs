@@ -100,7 +100,9 @@ public sealed class UserManagerLifecycleClassificationTests
         };
         var r = UserManagerLifecycleClassifier.Classify(6, users, []);
         Assert.Equal(0, r.Expired);
-        Assert.Equal("unclassified", r.Rows[0].State);
+        // Python treats an unused account with an actual profile as valid;
+        // time-left=0 is never evidence of transfer-limit expiry.
+        Assert.Equal("valid", r.Rows[0].State);
         Assert.Equal("active", r.Rows[1].State);
         Assert.Equal("active", r.Rows[2].State);
     }
