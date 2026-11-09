@@ -11,7 +11,9 @@ public sealed record CardGenerationOptions(
     string SequenceMode = "0000", bool AvoidDuplicate = true,
     int StartSequence = 1, string UsernamePrefix = "");
 
-public sealed record Voucher(string Sequence, string Username, string Password);
+public sealed record Voucher(string Sequence, string Username, string Password,
+    decimal Price = 0, long LimitBytes = 0, string LimitUptime = "",
+    int ValidityDays = 0, string CreatedAt = "");
 
 public sealed class CardGenerationException(string message) : ArgumentException(message);
 
