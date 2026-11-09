@@ -1,4 +1,6 @@
 using System.Threading;
+using System.Diagnostics;
+using HadramoutNET.Core.Licensing;
 using System.Windows;
 using HadramoutNET.Core.RouterOS;
 
@@ -12,11 +14,27 @@ namespace HadramoutNET.App;
 public partial class MainWindow : Window
 {
     private readonly RouterConnectionProbe _probe = new();
+    private readonly Stopwatch _licenseClock = Stopwatch.StartNew();
+    private readonly SupabaseLicenseClient _supabaseClient = new();
+    private readonly CancellationTokenSource _windowCancel = new();
+    private PaidLicenseCoordinator? _paidLicense;
+    private bool _licenseBusy;
     private CancellationTokenSource? _probeCancellation;
 
     public MainWindow()
     {
         InitializeComponent();
+        try
+        {
+            _paidLicense = new PaidLicenseCoordinator(
+                PaidCodeStore.ForCurrentUser(), _supabaseClient);
+        }
+        catch (Exception)
+        {
+            LicenseStatusText.Text = "تعذر فتح مخزن الترخيص المحمي؛ تحقق من ملفات المستخدم.";
+            ActivateLicenseButton.IsEnabled = false;
+            CheckLicenseButton.IsEnabled = false;
+        }
     }
 
     private async void TestConnection_Click(object sender, RoutedEventArgs e)
@@ -62,9 +80,56 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void CheckLicense_Click(object sender, RoutedEventArgs e) =>
+        await VerifyLicenseAsync(activate: false);
+
+    private async void ActivateLicense_Click(object sender, RoutedEventArgs e) =>
+        await VerifyLicenseAsync(activate: true);
+
+    private async Task VerifyLicenseAsync(bool activate)
+    {
+        if (_licenseBusy || _paidLicense is null) return;
+        _licenseBusy = true;
+        ActivateLicenseButton.IsEnabled = false;
+        CheckLicenseButton.IsEnabled = false;
+        // An entered code is processed ONLY in the explicit activation path.
+        string enteredCode = activate ? LicenseCodeBox.Password : string.Empty;
+        LicenseCodeBox.Clear();
+        LicenseStatusText.Text = activate ? "جارٍ التحقق من الرمز وإجراء التفعيل عند الحاجة..." :
+            "جارٍ فحص الترخيص المحفوظ من الخدمة الموقعة...";
+        try
+        {
+            LicenseAccess result = activate
+                ? await _paidLicense.ActivateEnteredCodeAsync(
+                    enteredCode, DateTimeOffset.UtcNow, _licenseClock.Elapsed, _windowCancel.Token)
+                : await _paidLicense.CheckStoredAsync(
+                    DateTimeOffset.UtcNow, _licenseClock.Elapsed, _windowCancel.Token);
+            if (!IsLoaded) return;
+            LicenseStatusText.Text = result.Permitted
+                ? "الترخيص المدفوع صالح بالتوقيع الرقمي؛ الدخول الكامل لم يُفعّل بعد."
+                : result.Message;
+        }
+        catch (Exception)
+        {
+            if (IsLoaded)
+                LicenseStatusText.Text = "تعذر التحقق من الترخيص؛ لم تُمنح صلاحية دخول.";
+        }
+        finally
+        {
+            _licenseBusy = false;
+            if (IsLoaded)
+            {
+                ActivateLicenseButton.IsEnabled = true;
+                CheckLicenseButton.IsEnabled = true;
+            }
+        }
+    }
+
     protected override void OnClosed(EventArgs e)
     {
         _probeCancellation?.Cancel();
+        _windowCancel.Cancel();
+        _supabaseClient.Dispose();
         base.OnClosed(e);
     }
 }

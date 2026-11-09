@@ -80,6 +80,27 @@
                                 <TextBlock Text="التجربة المجانية لمدة 20 يوماً (480 ساعة) تبدأ بعد أول اتصال ناجح بالراوتر."
                                            TextWrapping="Wrap" Margin="0,10,0,7"
                                            FontSize="14" Foreground="{StaticResource TextMuted}"/>
+                                <TextBlock Text="رمز الترخيص من خدمة Supabase"
+                                           Margin="0,8,0,4" FontWeight="Bold"
+                                           Foreground="{StaticResource DarkRed}"/>
+                                <PasswordBox x:Name="LicenseCodeBox"
+                                             Height="35" Margin="0,0,0,7"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
+                                            Margin="0,0,0,7">
+                                    <Button x:Name="ActivateLicenseButton"
+                                            Content="تفعيل الرمز" Width="155" Height="34"
+                                            Margin="4,0" Click="ActivateLicense_Click"
+                                            Style="{StaticResource NavyReplacementButton}"/>
+                                    <Button x:Name="CheckLicenseButton"
+                                            Content="فحص الترخيص المحفوظ" Width="200" Height="34"
+                                            Margin="4,0" Click="CheckLicense_Click"
+                                            Style="{StaticResource NavyReplacementButton}"/>
+                                </StackPanel>
+                                <TextBlock x:Name="LicenseStatusText"
+                                           Text="لم يُفحص الترخيص بعد. لن يُفعّل الاتصال تلقائيا."
+                                           FontSize="12" TextWrapping="Wrap"
+                                           Foreground="{StaticResource TextMuted}"
+                                           Margin="0,0,0,7"/>
                                 <Button Content="بدء التجربة المجانية — 20 يوماً"
                                         Style="{StaticResource NavyReplacementButton}"
                                         IsEnabled="False" Height="35"/>
