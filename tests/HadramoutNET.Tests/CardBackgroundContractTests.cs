@@ -71,6 +71,37 @@ public sealed class CardBackgroundContractTests
     }
 
     [Fact]
+    public void Separate_package_backgrounds_remain_isolated_after_sqlite_restart()
+    {
+        string root = Path.Combine(Path.GetTempPath(),
+            "hnet-art-store-" + Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(root, "hadramout-net.db");
+        try
+        {
+            var store = new HadramoutNET.Core.Data.PackageSettingsStore(path);
+            var withPhoto = CardArtPresetCodec.ToSettings(
+                new CardArtOptions(BackgroundData: TinyPng, BackgroundMode: "fill"));
+            var withoutPhoto = CardArtPresetCodec.ToSettings(
+                new CardArtOptions(BackgroundMode: "stretch"));
+            store.SavePackage("with-background", withPhoto);
+            store.SavePackage("without-background", withoutPhoto);
+
+            var reopened = new HadramoutNET.Core.Data.PackageSettingsStore(path);
+            var packages = reopened.ListPackages();
+            Assert.Equal(2, packages.Count);
+            var first = CardArtPresetCodec.FromSettings(
+                Assert.Single(packages, row => row.Name == "with-background").Settings);
+            var second = CardArtPresetCodec.FromSettings(
+                Assert.Single(packages, row => row.Name == "without-background").Settings);
+            Assert.Equal(TinyPng, first.BackgroundData);
+            Assert.Equal("fill", first.BackgroundMode);
+            Assert.True(string.IsNullOrEmpty(second.BackgroundData));
+            Assert.Equal("stretch", second.BackgroundMode);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public void Invalid_text_fields_cannot_be_used_to_hide_image_errors()
     {
         var config = new CardArtOptions(BackgroundData: "%%%not-an-image%%%");
