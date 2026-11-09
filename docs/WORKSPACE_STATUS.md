@@ -37,7 +37,13 @@ yet a complete recreation of all the original Python program's services.
   An acknowledged reply means the request was accepted, not proven offline.
   Lost acknowledgment is reported UNCERTAIN, never retried, and clears the
   potentially stale UI listing. No bulk disconnect or automated maintenance
-  path is enabled. Router hardware acceptance and durable audit remain open.
+  path is enabled. Every confirmed attempt is now durably journaled in an
+  isolated `maintenance_audit` table before any RouterOS command; its
+  started/dispatching/accepted/rejected/uncertain state survives restart and
+  is shown in a dedicated read-only network tab. The local journal must
+  initialize and accept the dispatch marker or the remote write is blocked.
+  Router hardware acceptance and broader publication audits remain open.
+  See `docs/MAINTENANCE_AUDIT.md`.
 - User Manager v6/v7: the pre-existing UserManagerCatalog page is retained
   (user and profile listing, permission-aware status); no parallel directory
   or duplicate UI handler was added. The separate new RouterAccountDirectory
