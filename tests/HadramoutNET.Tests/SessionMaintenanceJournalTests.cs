@@ -87,11 +87,18 @@ public sealed class SessionMaintenanceJournalTests
         }
 
         Assert.Throws<InvalidOperationException>(() => new SessionMaintenanceJournal(python));
-        using var check = new SqliteConnection($"Data Source={python}");
-        check.Open();
-        using var command = check.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE name='maintenance_audit'";
-        Assert.Equal(0L, Convert.ToInt64(command.ExecuteScalar()));
+        using (var check = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = python,
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
+        }.ToString()))
+        {
+            check.Open();
+            using var command = check.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE name='maintenance_audit'";
+            Assert.Equal(0L, Convert.ToInt64(command.ExecuteScalar()));
+        }
     }
 
     [Fact]
