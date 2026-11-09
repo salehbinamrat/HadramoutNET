@@ -145,7 +145,7 @@ public sealed class RouterUserManagerPublisher
                     return Failed("delivery_uncertain",
                         "أُقر إنشاء المستخدم دون إرجاع معرّف صالح؛ لم يُرسل ربط الباقة.",
                         count, successes, uncertain: true);
-                binding["numbers"] = newId;
+                binding["numbers"] = newId!; // Already validated as a single *HEX RouterOS ID.
                 binding["customer"] = owner;
             }
 
