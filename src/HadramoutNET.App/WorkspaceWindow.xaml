@@ -32,6 +32,8 @@
                             Click="ShowPackages_Click"/>
                     <Button Content="حسابات PPPoE" Style="{StaticResource SidebarButton}"
                             Click="ShowPpp_Click"/>
+                    <Button Content="أرشيف حضرموت القديم" Style="{StaticResource SidebarButton}"
+                            Click="ShowLegacy_Click"/>
                     <Button Content="مدير المستخدمين 6/7" Style="{StaticResource SidebarButton}"
                             Click="ShowUserManager_Click"/>
                 </StackPanel>
@@ -356,6 +358,57 @@
                     </Grid>
                 </TabItem>
 
+                <TabItem Header="الأرشيف القديم">
+                    <Grid Margin="12">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="5,4,5,12"
+                                   Foreground="{StaticResource DarkRed}" FontWeight="Bold"
+                                   Text="استيراد اختياري لمرة واحدة من قاعدة حضرموت القديمة (SQLite v8). المصدر للقراءة فقط، والترخيص وسجل التجربة لا يستوردان. أوقف البرنامج القديم أو اختر نسخة احتياطية موثوقة قبل الاستيراد."/>
+                        <WrapPanel Grid.Row="1" Margin="0,0,0,10">
+                            <Button x:Name="PreviewLegacyButton"
+                                    Content="اختيار ملف وفحصه" Width="170" Height="36"
+                                    Margin="4" Click="PreviewLegacy_Click"/>
+                            <Button x:Name="ImportLegacyButton" Content="تأكيد استيراد السجل"
+                                    Width="180" Height="36" Margin="4" IsEnabled="False"
+                                    Click="ImportLegacy_Click"
+                                    Style="{StaticResource NavyReplacementButton}"/>
+                            <Button Content="تحديث الأرشيف" Width="145" Height="36"
+                                    Margin="4" Click="RefreshLegacy_Click"/>
+                        </WrapPanel>
+                        <TextBlock x:Name="LegacyPreviewText" Grid.Row="2"
+                                   TextWrapping="Wrap" Margin="5,4,5,12"
+                                   Text="لم يتم اختيار قاعدة بيانات قديمة. الاستيراد لا يغير البرنامج الأصلي."/>
+                        <DataGrid x:Name="LegacyCardsGrid" Grid.Row="3"
+                                  AutoGenerateColumns="False" IsReadOnly="True"
+                                  CanUserAddRows="False" EnableRowVirtualization="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="اسم المستخدم" Binding="{Binding Username}" Width="*"/>
+                                <DataGridTextColumn Header="دفعة الطباعة" Binding="{Binding Batch}" Width="*"/>
+                                <DataGridTextColumn Header="الباقة" Binding="{Binding Profile}" Width="*"/>
+                                <DataGridTextColumn Header="الخدمة" Binding="{Binding Service}" Width="100"/>
+                                <DataGridTextColumn Header="الحالة" Binding="{Binding Status}" Width="120"/>
+                                <DataGridTextColumn Header="تاريخ الإنشاء" Binding="{Binding CreatedAt}" Width="160"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <DockPanel Grid.Row="4" Margin="4,9,4,0">
+                            <Button x:Name="LegacyPreviousButton" Content="السابق"
+                                    IsEnabled="False" Width="100" Margin="4"
+                                    DockPanel.Dock="Right" Click="PreviousLegacy_Click"/>
+                            <Button x:Name="LegacyNextButton" Content="التالي"
+                                    IsEnabled="False" Width="100" Margin="4"
+                                    DockPanel.Dock="Right" Click="NextLegacy_Click"/>
+                            <TextBlock x:Name="LegacyPageText" Text="لم يتم تحميل سجل قديم"
+                                       VerticalAlignment="Center" Margin="12,0"
+                                       Foreground="{StaticResource TextMuted}"/>
+                        </DockPanel>
+                    </Grid>
+                </TabItem>
             </TabControl>
             <Border Grid.Row="2" Background="{StaticResource CreamPanel}"
                     BorderBrush="{StaticResource SandBorder}" BorderThickness="1"
