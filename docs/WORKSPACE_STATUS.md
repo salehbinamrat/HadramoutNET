@@ -31,6 +31,14 @@ yet a complete recreation of all the original Python program's services.
   unsafe neighbor (>5000) or per-service session (>2500) listings, unknown
   counts are unavailable rather than zero. Search and explicit IP/MAC copy
   are local-only. See `docs/NETWORK_MONITORING.md`.
+- User Manager database health (read-only): a dedicated network-monitoring
+  tab detects RouterOS v7, falls back to v6 only when unsupported, then
+  requests only the database-size and free-disk-space properties.
+  A denied/empty/partial response is shown as unavailable rather than
+  as zero. No database optimize, save or restore command is exposed.
+  Real wire-protocol regression tests are authored; final Windows CI
+  execution is blocked before any runner allocation and remains
+  NOT EXECUTED on the new SHA. See `docs/NETWORK_MONITORING.md`.
 - Targeted session maintenance: user-selectable SINGLE active Hotspot or PPPoE
   session, double-confirmed in WPF. A fresh exact-ID RouterOS read must
   match both username and IP before an internal guarded one-ID /remove.
