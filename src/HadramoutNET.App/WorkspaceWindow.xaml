@@ -218,7 +218,7 @@
                             <Button Content="سجل رفع الكروت" Width="150" Height="36"
                                     Margin="4" Click="ShowDeliveryAudit_Click"/>
                             <Button x:Name="ReconcileVoucherButton"
-                                    Content="مراجعة رفع سابق (User Manager)"
+                                    Content="مراجعة رفع سابق (Hotspot / PPP / UM)"
                                     Width="245" Height="36" Margin="4"
                                     IsEnabled="False" Click="ReconcileVoucher_Click"/>
                             <Button x:Name="VerifyUmDraftButton"
