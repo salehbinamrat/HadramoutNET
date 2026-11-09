@@ -112,6 +112,29 @@ public sealed class RouterAuthorizedSession : IAsyncDisposable
         finally { _lock.Release(); }
     }
 
+    /// <summary>
+    /// Only the trusted targeted-session maintenance service can remove one
+    /// current Hotspot/PPPoE active-record ID. No general router write access.
+    /// </summary>
+    internal async Task<RouterOsCommandResult> ExecuteMaintenanceDisconnectAsync(
+        string path, string id, CancellationToken cancellationToken = default)
+    {
+        if (path is not ("/ip/hotspot/active/remove" or "/ppp/active/remove"))
+            throw new InvalidOperationException("العملية خارج فصل الجلسات المحددة.");
+        var attributes = new Dictionary<string, string> { [".id"] = id };
+        RouterOsCommandGuard.Validate(path, attributes);
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!HasCurrentAccess)
+                throw new InvalidOperationException("انتهت صلاحية الجلسة قبل الفصل.");
+            var response = await _api.ExecuteAsync(
+                path, attributes, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return response;
+        }
+        finally { _lock.Release(); }
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _lock.WaitAsync().ConfigureAwait(false);
