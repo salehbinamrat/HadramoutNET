@@ -32,6 +32,7 @@ public partial class WorkspaceWindow : Window
     private readonly RouterDashboardReader _dashboard = new();
     private DateTimeOffset _dashboardLastReadUtc = DateTimeOffset.MinValue;
     private bool _refreshingLifecycle;
+    private bool _initialLifecycleRequested;
     private readonly UserManagerLifecycleReader _voucherLifecycle = new();
     private bool _readingVoucherStatus;
     private string _currentSidebarKey = "dashboard";
@@ -142,7 +143,14 @@ public partial class WorkspaceWindow : Window
 
         _heartbeat.Start();
         RefreshSidebarConnection();
+        RefreshDashboardLicenseBanner();
         await LoadDashboardAsync();
+        // One non-blocking lifecycle read after login; further scans are manual.
+        if (!_initialLifecycleRequested && IsLoaded && _session.HasCurrentAccess)
+        {
+            _initialLifecycleRequested = true;
+            _ = RefreshDashboardLifecycleAsync();
+        }
     }
 
 
@@ -346,11 +354,17 @@ public partial class WorkspaceWindow : Window
             _ => "dashboard"
         };
         MarkSidebarSelection(key);
+        if (Pages.SelectedIndex == 0) UpdateDashboardRecentActivity();
     }
 
     private void ShowDashboard_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 0;
     private void ShowCards_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 1;
-    private void ShowHotspot_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 2;
+    private void ShowHotspot_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmCurrentAccess()) return;
+        Pages.SelectedIndex = 2;
+        _ = LoadHotspotAsync();
+    }
     private void ShowPackages_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 3;
     private void ShowPpp_Click(object sender, RoutedEventArgs e)
     {
@@ -462,6 +476,7 @@ public partial class WorkspaceWindow : Window
         if (!force && DateTimeOffset.UtcNow - _dashboardLastReadUtc <
                 TimeSpan.FromSeconds(20)) return;
         _refreshing = true;
+        DashboardRefreshButton.IsEnabled = false;
         DashboardNotice.Text = "جارٍ تحديث البيانات من الراوتر...";
         try
         {
@@ -475,12 +490,14 @@ public partial class WorkspaceWindow : Window
                 DashboardConnectedMetric.FromSources(data.HotspotActive, data.PppActive);
             DashboardConnectedValue.Text = connected.Display;
             DashboardRouterName.Text = "اسم الراوتر: " + EnglishDigitPresentation.Text(data.RouterName);
+            DashboardRouterBoard.Text = "نوع الجهاز: " +
+                EnglishDigitPresentation.Text(string.IsNullOrWhiteSpace(data.RouterBoardName)
+                    ? "—" : data.RouterBoardName);
             DashboardRouterHost.Text = "عنوان الراوتر: " + EnglishDigitPresentation.Text(_session.Endpoint);
             RouterVersionText.Text = "RouterOS: " + EnglishDigitPresentation.Text(data.RouterOsVersion);
             RouterUptimeText.Text = "وقت التشغيل: " + EnglishDigitPresentation.Text(data.Uptime);
             DashboardDateText.Text = EnglishDigitPresentation.Timestamp(DateTime.Now);
-            DashboardLicenseText.Text = _session.HasCurrentAccess ?
-                "حالة الوصول: جلسة مصرح بها" : "حالة الوصول: يلزم إعادة التحقق";
+            RefreshDashboardLicenseBanner();
             DashboardHealthText.Text = data.UnavailableServices.Count == 0 &&
                 !connected.Partial ? "حالة القراءة: جميع المصادر متاحة" :
                 "حالة القراءة: بعض المصادر غير متاحة";
@@ -489,6 +506,7 @@ public partial class WorkspaceWindow : Window
                 "خدمات غير متاحة: " + string.Join("، ", data.UnavailableServices) +
                 " (لم تُعرض قيمة صفر وهمية).";
             _dashboardLastReadUtc = DateTimeOffset.UtcNow;
+            UpdateDashboardRecentActivity();
         }
         catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
         catch (InvalidOperationException)
@@ -497,10 +515,23 @@ public partial class WorkspaceWindow : Window
         }
         catch (Exception)
         {
-            if (IsLoaded)
-                DashboardNotice.Text = "تعذر قراءة البيانات؛ لم يتم تغيير أي إعدادات في MikroTik.";
+            if (IsLoaded && !_session.HasCurrentAccess)
+                LockWorkspace();
+            else if (IsLoaded)
+            {
+                DashboardHealthText.Text = _dashboardLastReadUtc == DateTimeOffset.MinValue
+                    ? "تعذرت القراءة المباشرة؛ لا توجد بيانات مؤكدة"
+                    : "تحذير: فشل التحديث؛ المعروض آخر قراءة ناجحة";
+                DashboardNotice.Text = _dashboardLastReadUtc == DateTimeOffset.MinValue
+                    ? "تعذر جلب البيانات من MikroTik. القيم غير المعروفة ليست صفرا."
+                    : "تعذر التحديث؛ لم تتغير البيانات، والتاريخ يخص آخر قراءة ناجحة.";
+            }
         }
-        finally { _refreshing = false; }
+        finally
+        {
+            _refreshing = false;
+            if (IsLoaded) DashboardRefreshButton.IsEnabled = true;
+        }
     }
 
     private async Task LoadHotspotAsync()
@@ -613,6 +644,23 @@ public partial class WorkspaceWindow : Window
         finally { _refreshingLifecycle = false; }
     }
 
+    private void RefreshDashboardLicenseBanner()
+    {
+        if (DashboardLicenseText is null) return;
+        try
+        {
+            DashboardAccessState display = DashboardAccessPresentation.From(
+                _paid.StatusAt(_uptime.Elapsed), _trial.Preview(DateTimeOffset.UtcNow),
+                _session.HasCurrentAccess);
+            DashboardLicenseText.Text = display.Text;
+        }
+        catch (Exception)
+        {
+            DashboardLicenseText.Text =
+                "حالة الوصول: تعذر قراءة الترخيص أو التجربة المحمية.";
+        }
+    }
+
     private void UpdateDashboardRecentActivity()
     {
         if (DashboardRecentActivity is null) return;
@@ -670,7 +718,11 @@ public partial class WorkspaceWindow : Window
         finally
         {
             _checking = false;
-            if (IsLoaded) RefreshSidebarConnection();
+            if (IsLoaded)
+            {
+                RefreshSidebarConnection();
+                RefreshDashboardLicenseBanner();
+            }
         }
     }
 

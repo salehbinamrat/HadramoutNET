@@ -43,6 +43,16 @@ public sealed class WorkspaceDashboardStructureTests
     }
 
     [Fact]
+    public void Dashboard_quick_actions_trigger_real_load_and_lifecycle_starts_after_login()
+    {
+        string source = File.ReadAllText(Path.Combine(RepoRoot().FullName,
+            "src", "HadramoutNET.App", "WorkspaceWindow.xaml.cs"));
+        Assert.Contains("_ = LoadHotspotAsync();", source);
+        Assert.Contains("_ = RefreshDashboardLifecycleAsync();", source);
+        Assert.Contains("DashboardAccessPresentation.From(", source);
+    }
+
+    [Fact]
     public void Dashboard_has_source_metric_cards_and_six_bands_without_scroll()
     {
         string file = Path.Combine(RepoRoot().FullName, "src",
@@ -57,7 +67,7 @@ public sealed class WorkspaceDashboardStructureTests
             "DashboardTotalCardsValue", "DashboardConnectedValue",
             "DashboardActiveCardsValue", "DashboardExpiredCardsValue",
             "CpuValue", "RamValue", "DashboardRecentActivity",
-            "DashboardRouterName", "DashboardRouterHost",
+            "DashboardRouterName", "DashboardRouterHost", "DashboardRouterBoard",
             "DashboardLifecycleNote", "DashboardLicenseText"
         ];
         foreach (string name in exact)

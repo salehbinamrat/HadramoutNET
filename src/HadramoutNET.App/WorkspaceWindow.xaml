@@ -109,7 +109,7 @@
                                 </StackPanel>
                                 <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center"
                                             Margin="6,0,2,0">
-                                    <Button Content="تحديث البيانات" Width="132" Height="34"
+                                    <Button x:Name="DashboardRefreshButton" Content="تحديث البيانات" Width="132" Height="34"
                                             Click="RefreshDashboard_Click"/>
                                     <TextBlock x:Name="DashboardDateText" FontSize="10"
                                                TextAlignment="Center" Foreground="White"
@@ -267,7 +267,8 @@
                                     <StackPanel Margin="11,6,11,2">
                                         <TextBlock x:Name="DashboardRouterName" Text="اسم الراوتر: —"
                                                    FontWeight="Bold" Margin="0,2"/>
-                                        <TextBlock x:Name="DashboardRouterHost" Text="عنوان الراوتر: —"
+                                        <TextBlock x:Name="DashboardRouterBoard" Text="نوع الجهاز: —" Margin="0,2" FontSize="12"/>
+                                         <TextBlock x:Name="DashboardRouterHost" Text="عنوان الراوتر: —"
                                                    Margin="0,2"/>
                                         <TextBlock x:Name="RouterVersionText" Text="RouterOS: —"
                                                    Margin="0,2"/>
