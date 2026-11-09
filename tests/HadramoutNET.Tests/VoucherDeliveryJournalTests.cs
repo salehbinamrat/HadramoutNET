@@ -84,6 +84,75 @@ public sealed class VoucherDeliveryJournalTests
         Assert.Empty(journal.ReadRecent());
     }
 
+    [Fact]
+    public void Unresolved_attempts_are_isolated_to_the_same_router_and_bounded()
+    {
+        using var tmp = new TempDb();
+        var journal = new VoucherDeliveryJournal(tmp.PathName);
+        long first = journal.Begin("Router A", "10.0.0.1:8728", "hotspot", "day", 2);
+        journal.MarkDispatching(first);
+        journal.Complete(first, "partial", "partial_failure", 1);
+        long second = journal.Begin("Router B", "10.0.0.2:8728", "ppp", "week", 1);
+        journal.MarkDispatching(second);
+        journal.Complete(second, "accepted", "published", 1);
+        long third = journal.Begin("Router A", "10.0.0.1:8728", "userman", "month", 1);
+        journal.MarkDispatching(third);
+        Assert.Equal(new[] { third, first },
+            new VoucherDeliveryJournal(tmp.PathName)
+                .ReadUnresolved("Router A", "10.0.0.1:8728").Select(x => x.Id));
+        Assert.Empty(journal.ReadUnresolved("Router B", "10.0.0.2:8728"));
+        Assert.Single(journal.ReadUnresolved("Router A", "10.0.0.1:8728", 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => journal.ReadRecent(501));
+    }
+
+    [Fact]
+    public async Task Missing_local_audit_table_prevents_any_router_publication()
+    {
+        using var tmp = new TempDb();
+        var journal = new VoucherDeliveryJournal(tmp.PathName);
+        using (var db = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = tmp.PathName, Pooling = false
+        }.ToString()))
+        {
+            db.Open();
+            using var command = db.CreateCommand();
+            command.CommandText = "DROP TABLE voucher_delivery_audit;";
+            command.ExecuteNonQuery();
+        }
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var server = Task.Run(async () =>
+        {
+            using var client = await listener.AcceptTcpClientAsync(deadline.Token);
+            using var stream = client.GetStream();
+            await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            await Send(stream, "!done");
+            await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            await Send(stream, "!re", "=name=Router");
+            await Send(stream, "!done");
+            byte[] buffer = new byte[1];
+            using var idle = new CancellationTokenSource(TimeSpan.FromMilliseconds(700));
+            try { Assert.Equal(0, await stream.ReadAsync(buffer, idle.Token)); }
+            catch (OperationCanceledException) { }
+        }, deadline.Token);
+        var loginCoordinator = RouterLoginCoordinator.CreateForTests(
+            () => new LicenseAccess("active", "ok", "online_valid", "0123456789ABCDEF0123456789ABCDEF"),
+            () => new TrialAccess("locked", "trial_expired", "expired", 0),
+            () => new TrialAccess("locked", "trial_expired", "expired", 0));
+        var login = await loginCoordinator.LoginAsync(
+            new RouterLoginRequest("127.0.0.1", port.ToString(), "tester", "pwd"),
+            new DateTimeOffset(2026, 11, 9, 11, 0, 0, TimeSpan.Zero), deadline.Token);
+        Assert.True(login.Success);
+        await using var session = login.Session!;
+        await Assert.ThrowsAsync<SqliteException>(async () =>
+            await new VoucherDeliveryCoordinator(journal).PublishAsync(session,
+                Cards, "hotspot", "default", "", confirmed: true, deadline.Token));
+        await server;
+    }
+
     private static async Task Send(NetworkStream stream, params string[] words) =>
         await stream.WriteAsync(RouterOsSentenceCodec.Encode(words));
 
