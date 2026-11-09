@@ -54,7 +54,9 @@ public static partial class UserManagerLifecycleClassifier
         var aliases = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var row in users)
         {
-            string username = Get(row, "name", "username").Trim();
+            string username = (version == 6
+                ? GetPreferred(row, "username", "name")
+                : GetPreferred(row, "name", "username")).Trim();
             if (string.IsNullOrWhiteSpace(username) || username.Length > 128 ||
                 username.Any(char.IsControl) || !byName.TryAdd(username, row))
                 throw new InvalidOperationException(
@@ -218,9 +220,18 @@ public static partial class UserManagerLifecycleClassifier
             long.TryParse(Get(row, "active-sessions"),
                 NumberStyles.None, CultureInfo.InvariantCulture,
                 out long sessions) && sessions > 0) return true;
-        if (Get(row, "last-used-ip", "last-used-mac").Length > 0) return true;
+        if (Get(row, "last-used-ip").Length > 0 ||
+            Get(row, "last-used-mac").Length > 0) return true;
         string lastSeen = Get(row, "last-seen").Trim().ToLowerInvariant();
         return lastSeen is not ("" or "never" or "unknown");
+    }
+
+    private static string GetPreferred(
+        IReadOnlyDictionary<string, string> row,
+        string first, string alternative)
+    {
+        string primary = Get(row, first);
+        return string.IsNullOrWhiteSpace(primary) ? Get(row, alternative) : primary;
     }
 
     private static bool Flag(string v) =>
