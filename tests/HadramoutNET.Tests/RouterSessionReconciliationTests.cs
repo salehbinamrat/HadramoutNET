@@ -133,11 +133,17 @@ public sealed class RouterSessionReconciliationTests
 
         await using var session = await Connect(port, timeout.Token);
         long id = audit.Journal.Begin("SomeOtherRouter", session.Endpoint, Selected);
-        var check = await new RouterSessionReconciler(audit.Journal)
-            .CheckAsync(session, id, timeout.Token);
+        long wrongEndpoint = audit.Journal.Begin(
+            session.Identity, "different.example:8728", Selected);
+        var checker = new RouterSessionReconciler(audit.Journal);
+        var check = await checker.CheckAsync(session, id, timeout.Token);
+        var second = await checker.CheckAsync(session, wrongEndpoint, timeout.Token);
         Assert.False(check.Checked);
         Assert.Equal("router_mismatch", check.Observation);
+        Assert.False(second.Checked);
+        Assert.Equal("router_mismatch", second.Observation);
         Assert.Empty(audit.Journal.ReadChecks(id));
+        Assert.Empty(audit.Journal.ReadChecks(wrongEndpoint));
         await session.DisposeAsync();
         await peer;
     }
