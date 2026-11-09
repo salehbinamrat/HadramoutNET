@@ -25,12 +25,11 @@ yet a complete recreation of all the original Python program's services.
   Passwords are not requested from RouterOS.
 - PPPoE accounts: a separate live, read-only table with username, profile,
   disabled state and service. No password columns or mutation actions.
-- User Manager users: a separate read-only page with RouterOS v6 path first,
-  RouterOS v7 fallback only for an unsupported v6 command, and no
-  permission-error fallback. Usernames, customer/group and disabled fields
-  are projected; all credential fields are discarded even if returned.
-  Wire-level regression tests use a synthetic RouterOS TCP peer.
-  Real-router permission and version acceptance remains outstanding.
+- User Manager v6/v7: the pre-existing UserManagerCatalog page is retained
+  (user and profile listing, permission-aware status); no parallel directory
+  or duplicate UI handler was added. The separate new RouterAccountDirectory
+  handles PPPoE only. Real-router version and permission acceptance remains
+  outstanding.
 - Create cards: secure local username/password draft generation,
   Excel, CSV, genuine PDF card sheets and guarded .rsc exports. A separate explicit button permits
   **confirmed Hotspot or PPP publication**, preflight-reading only live usernames
