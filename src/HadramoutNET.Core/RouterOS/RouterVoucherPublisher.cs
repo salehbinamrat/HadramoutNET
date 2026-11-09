@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
 using HadramoutNET.Core.Cards;
 
 namespace HadramoutNET.Core.RouterOS;
@@ -18,6 +20,12 @@ public sealed record VoucherPublishReport(
 /// </summary>
 public sealed class RouterVoucherPublisher
 {
+    // Original Python add_hotspot_user only emits normalized h/m fragments.
+    // Never pass arbitrary content to an account usage-limit attribute.
+    private static readonly Regex ValidUptime = new(
+        @"^(?:[0-9]{1,7}h)?(?:[0-9]{1,7}m)?$",
+        RegexOptions.CultureInvariant);
+
     public async Task<VoucherPublishReport> PublishAsync(
         RouterAuthorizedSession session, IReadOnlyList<Voucher> vouchers,
         VoucherPublishOptions options, CancellationToken cancellationToken = default)
@@ -52,6 +60,10 @@ public sealed class RouterVoucherPublisher
                 card.Username.Any(c => char.IsControl(c) || char.IsWhiteSpace(c)) ||
                 card.Password.Length > 64 ||
                 card.Password.Any(char.IsControl) ||
+                card.LimitBytes < 0 ||
+                card.LimitUptime is null ||
+                card.LimitUptime.Length > 32 ||
+                !ValidUptime.IsMatch(card.LimitUptime) ||
                 !usernames.Add(card.Username))
                 return Fail("invalid_cards",
                     "المسودة تحتوي أسماء مكررة أو بيانات دخول غير صالحة.",
@@ -103,9 +115,21 @@ public sealed class RouterVoucherPublisher
                 ["profile"] = options.Profile
             };
             if (options.Service == "ppp")
+            {
+                // PPPoE secrets do not expose the Hotspot per-user transfer
+                // limit attributes. Never invent unsupported quota semantics.
                 attributes["service"] = "pppoe";
-            else if (options.Server != "all" && options.Server.Length != 0)
-                attributes["server"] = options.Server;
+            }
+            else
+            {
+                if (options.Server != "all" && options.Server.Length != 0)
+                    attributes["server"] = options.Server;
+                if (card.LimitUptime.Length != 0)
+                    attributes["limit-uptime"] = card.LimitUptime;
+                if (card.LimitBytes != 0)
+                    attributes["limit-bytes-total"] =
+                        card.LimitBytes.ToString(CultureInfo.InvariantCulture);
+            }
 
             try
             {
