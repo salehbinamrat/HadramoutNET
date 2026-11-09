@@ -12,6 +12,17 @@ public sealed record UserManagerPublishOptions(
     string Profile, bool Confirmed, string Customer = "");
 
 /// <summary>
+/// Optional durable stage recorder, supplied by the WPF delivery coordinator.
+/// When supplied, the publisher MUST prepare before a remote mutation and
+/// acknowledge after a successful RouterOS command response. Never retry.
+/// </summary>
+public interface IUserManagerStageAudit
+{
+    long Prepare(int ordinal, int version, string stage);
+    void Acknowledge(long stageId);
+}
+
+/// <summary>
 /// Explicit, safe two-phase UM6/UM7 voucher creation. Preflight reads only
 /// projected names/profiles, refuses duplicates and unknown owners, then
 /// sends each write at most once. Never automatically retries or deletes an
@@ -24,7 +35,8 @@ public sealed class RouterUserManagerPublisher
 
     public async Task<VoucherPublishReport> PublishAsync(
         RouterAuthorizedSession session, IReadOnlyList<Voucher> vouchers,
-        UserManagerPublishOptions options, CancellationToken cancellationToken = default)
+        UserManagerPublishOptions options, CancellationToken cancellationToken = default,
+        IUserManagerStageAudit? stageAudit = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(vouchers);
@@ -100,8 +112,10 @@ public sealed class RouterUserManagerPublisher
             "/tool/user-manager/user/create-and-activate-profile";
 
         var successes = new List<string>();
+        int ordinal = 0;
         foreach (Voucher card in vouchers)
         {
+            ordinal++;
             var addAttributes = new Dictionary<string, string>
             {
                 ["password"] = card.Password
@@ -117,8 +131,10 @@ public sealed class RouterUserManagerPublisher
             RouterOsCommandResult created;
             try
             {
+                long stageId = stageAudit?.Prepare(ordinal, catalog.Version, "create_user") ?? 0;
                 created = await session.ExecuteUserManagerProvisionAsync(
                     addPath, addAttributes, cancellationToken).ConfigureAwait(false);
+                if (stageAudit is not null) stageAudit.Acknowledge(stageId);
             }
             catch (RouterOsTrapException)
             {
@@ -128,7 +144,8 @@ public sealed class RouterUserManagerPublisher
                     count, successes, uncertain: false);
             }
             catch (Exception ex) when (ex is IOException or
-                InvalidOperationException or OperationCanceledException)
+                InvalidOperationException or OperationCanceledException or
+                Microsoft.Data.Sqlite.SqliteException)
             {
                 return Failed("delivery_uncertain",
                     "تعذر تأكيد إنشاء أحد المستخدمين؛ راجع User Manager قبل أي إعادة.",
@@ -151,12 +168,15 @@ public sealed class RouterUserManagerPublisher
 
             try
             {
+                long stageId = stageAudit?.Prepare(ordinal, catalog.Version, "bind_profile") ?? 0;
                 await session.ExecuteUserManagerProvisionAsync(
                     bindPath, binding, cancellationToken).ConfigureAwait(false);
+                if (stageAudit is not null) stageAudit.Acknowledge(stageId);
                 successes.Add(card.Username);
             }
             catch (Exception ex) when (ex is RouterOsTrapException or IOException
-                or InvalidOperationException or OperationCanceledException)
+                or InvalidOperationException or OperationCanceledException or
+                Microsoft.Data.Sqlite.SqliteException)
             {
                 // Account creation succeeded but profile attachment is NOT
                 // confirmed: no retry, compensating delete, or misleading
