@@ -147,8 +147,8 @@ public static class CardArtPresetCodec
     private static IReadOnlyDictionary<string, CardArtPoint> ReadPositions(
         IReadOnlyDictionary<string, JsonElement> values)
     {
-        var merged = new Dictionary<string, CardArtPoint>(
-            CardArtwork.DefaultPositions, StringComparer.Ordinal);
+        var merged = CardArtwork.DefaultPositions.ToDictionary(
+            item => item.Key, item => item.Value, StringComparer.Ordinal);
         if (!values.TryGetValue("card.positions", out var raw))
             return merged;
         if (raw.ValueKind != JsonValueKind.Object)
