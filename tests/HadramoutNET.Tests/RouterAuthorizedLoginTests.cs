@@ -179,7 +179,7 @@ public sealed class RouterAuthorizedLoginTests
     {
         var coordinator = Login(
             () => new("locked", "غير مسموح", "not_found"),
-            () => new("locked", "سجل تالف", "state_invalid"), Started);
+            () => new("locked", "state_invalid", "سجل تالف", 0), Started);
         var result = await coordinator.LoginAsync(Request(8728, free: true), Now);
         Assert.False(result.Success);
         Assert.Equal("state_invalid", result.Reason);
