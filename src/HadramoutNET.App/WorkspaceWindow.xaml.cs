@@ -39,6 +39,7 @@ public partial class WorkspaceWindow : Window
     private readonly DispatcherTimer _heartbeat = new();
     private readonly CancellationTokenSource _cancel = new();
     private IReadOnlyList<Voucher> _generated = [];
+    private PrintLayoutOptions _printLayout = new();
     private bool _published;
     private bool _uploading;
     private bool _verifyingUmDraft;
@@ -716,6 +717,36 @@ public partial class WorkspaceWindow : Window
     private void ExportExcel_Click(object sender, RoutedEventArgs e) =>
         ExportFile("Excel|*.xlsx", ".xlsx", (data, path) =>
             ExcelExporter.SaveExcel(data, path, "كروت حضرموت"));
+    private void EditPrintLayout_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmCurrentAccess()) return;
+        PrintLayoutOptions? updated = PrintLayoutEditorWindow.Edit(this, _printLayout);
+        if (updated is null) return;
+        _printLayout = updated;
+        PrintLayoutInfo.Text = DescribePrintLayout(updated);
+        CardsNotice.Text = "اعتُمد تخطيط الورقة لهذه الجلسة. احفظ الباقة للإبقاء عليه بعد إعادة التشغيل.";
+    }
+
+    private void PreviewPrint_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmCurrentAccess()) return;
+        try
+        {
+            WindowsVoucherPrinter.Preview(this, _generated, _printLayout);
+            CardsNotice.Text = "اكتملت معاينة الورقة الأولى، ولم يُرسل أي أمر للطابعة.";
+        }
+        catch (Exception ex) when (ex is PrintLayoutException or InvalidOperationException)
+        {
+            CardsNotice.Text = "تعذرت معاينة التخطيط: " + ex.Message;
+        }
+    }
+
+    private static string DescribePrintLayout(PrintLayoutOptions options) =>
+        $"{options.Paper.ToUpperInvariant()} | " +
+        (options.Orientation == "portrait" ? "عمودي" : "أفقي") +
+        $" | {options.Rows}×{options.Columns} كرت/ورقة | " +
+        $"{options.CardWidthMm:G}×{options.CardHeightMm:G} مم";
+
     private void PrintCards_Click(object sender, RoutedEventArgs e)
     {
         if (!ConfirmCurrentAccess()) return;
@@ -736,7 +767,7 @@ public partial class WorkspaceWindow : Window
 
         try
         {
-            var result = WindowsVoucherPrinter.Print(this, _generated);
+            var result = WindowsVoucherPrinter.Print(this, _generated, _printLayout);
             CardsNotice.Text = result.Message;
         }
         catch (Exception)
@@ -767,7 +798,7 @@ public partial class WorkspaceWindow : Window
                 OverwritePrompt = true
             };
             if (dialog.ShowDialog(this) != true) return;
-            VoucherPdfExporter.SavePdf(_generated, dialog.FileName);
+            VoucherPdfExporter.SavePdf(_generated, dialog.FileName, _printLayout);
             CardsNotice.Text = "تم حفظ PDF بأبعاد A4 فعلية وأرقام قابلة للنسخ.";
         }
         catch (Exception ex) when (ex is IOException or PrintLayoutException or
@@ -824,6 +855,8 @@ public partial class WorkspaceWindow : Window
                 ["create.profile"] = JsonSerializer.SerializeToElement(CardProfileBox.Text),
                 ["create.customer"] = JsonSerializer.SerializeToElement(UmCustomerBox.Text)
             };
+            foreach (var pair in PrintLayoutPresetCodec.ToSettings(_printLayout))
+                settings[pair.Key] = pair.Value;
             _packages.SavePackage(PackageNameBox.Text, settings);
             ReloadPackages();
             WorkspaceStatus.Text = "حُفظت إعدادات هذه الباقة في HadramoutNET فقط.";
@@ -847,6 +880,18 @@ public partial class WorkspaceWindow : Window
     private void PackagesGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (PackagesGrid.SelectedItem is not PackagePreset selected) return;
+        PrintLayoutOptions layout;
+        try
+        {
+            layout = PrintLayoutPresetCodec.FromSettings(selected.Settings);
+        }
+        catch (PrintLayoutException)
+        {
+            WorkspaceStatus.Text = "تعذر تحميل تخطيط الطباعة من الباقة: إعدادات غير صالحة؛ لم تُطبق أي خيارات.";
+            return;
+        }
+        _printLayout = layout;
+        PrintLayoutInfo.Text = DescribePrintLayout(layout);
         PackageNameBox.Text = selected.Name;
         var values = selected.Settings;
         if (values.TryGetValue("create.quantity", out var q) &&
@@ -863,7 +908,7 @@ public partial class WorkspaceWindow : Window
             format.ValueKind == JsonValueKind.String) SelectChoice(CardFormatCombo, format.GetString());
         if (values.TryGetValue("create.service", out var service) &&
             service.ValueKind == JsonValueKind.String) SelectChoice(CardServiceCombo, service.GetString());
-        WorkspaceStatus.Text = "تم استعادة خيارات الباقة دون تغيير الكروت الحالية.";
+        WorkspaceStatus.Text = "تم استعادة خيارات إنشاء الكروت وتخطيط الطباعة الخاص بهذه الباقة.";
     }
 
     private static void SelectChoice(ComboBox combo, string? tag)
