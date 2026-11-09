@@ -49,9 +49,9 @@ public static class VoucherPdfExporter
             pdf.Info.Author = "Hadramout Network Cards";
             pdf.Info.Subject = "MikroTik voucher cards";
 
-            using var fontName = new XFont("Arial", 8, XFontStyleEx.Bold);
-            using var fontCode = new XFont("Arial", 10, XFontStyleEx.Bold);
-            using var fontSmall = new XFont("Arial", 6, XFontStyleEx.Regular);
+            var fontName = new XFont("Arial", 8, XFontStyleEx.Bold);
+            var fontCode = new XFont("Arial", 10, XFontStyleEx.Bold);
+            var fontSmall = new XFont("Arial", 6, XFontStyleEx.Regular);
             var red = new XSolidBrush(XColor.FromArgb(125, 15, 36));
             var redLight = new XSolidBrush(XColor.FromArgb(194, 27, 60));
             var cream = new XSolidBrush(XColor.FromArgb(255, 250, 241));

@@ -203,6 +203,8 @@
                                     Style="{StaticResource NavyReplacementButton}"/>
                             <Button Content="Excel" Width="95" Height="36"
                                     Click="ExportExcel_Click" Margin="4"/>
+                            <Button Content="PDF" Width="100" Height="36"
+                                    Click="ExportPdf_Click" Margin="4"/>
                             <Button Content="CSV" Width="90" Height="36"
                                     Click="ExportCsv_Click" Margin="4"/>
                             <Button Content="RouterOS .rsc" Width="135" Height="36"

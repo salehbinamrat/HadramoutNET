@@ -294,6 +294,36 @@ public partial class WorkspaceWindow : Window
     private void ExportExcel_Click(object sender, RoutedEventArgs e) =>
         ExportFile("Excel|*.xlsx", ".xlsx", (data, path) =>
             ExcelExporter.SaveExcel(data, path, "كروت حضرموت"));
+    private void ExportPdf_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmCurrentAccess()) return;
+        if (_generated.Count == 0)
+        {
+            CardsNotice.Text = "أنشئ مسودة كروت قبل تصدير PDF.";
+            return;
+        }
+        try
+        {
+            var dialog = new SaveFileDialog
+            {
+                Title = "حفظ كروت حضرموت PDF",
+                FileName = "كروت حضرموت",
+                Filter = "PDF|*.pdf",
+                DefaultExt = ".pdf",
+                AddExtension = true,
+                OverwritePrompt = true
+            };
+            if (dialog.ShowDialog(this) != true) return;
+            VoucherPdfExporter.SavePdf(_generated, dialog.FileName);
+            CardsNotice.Text = "تم حفظ PDF بأبعاد A4 فعلية وأرقام قابلة للنسخ.";
+        }
+        catch (Exception ex) when (ex is IOException or PrintLayoutException or
+            InvalidOperationException or UnauthorizedAccessException)
+        {
+            CardsNotice.Text = "تعذر تصدير PDF: " + ex.Message;
+        }
+    }
+
     private void ExportCsv_Click(object sender, RoutedEventArgs e) =>
         ExportFile("CSV|*.csv", ".csv", CardExports.SaveCsv);
     private void ExportScript_Click(object sender, RoutedEventArgs e) =>
