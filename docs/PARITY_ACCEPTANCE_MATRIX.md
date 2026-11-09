@@ -13,7 +13,7 @@ application has been ported. Statuses are evidence-scoped.
 | RouterOS API login | Live API auth, current-access gating, session expiration | Physical-router acceptance under supported v6/v7 permissions |
 | Local card generation | 3 credential formats, sequence and uniqueness guards | Full original options/preview parity, large real batches |
 | Hotspot and PPP | Account publishing, read-only crash review, count-verified preflight before writes; Hotspot time/byte limits sent per voucher | Router acceptance and real accounting; PPP time/volume restrictions still depend on router profile/RADIUS, and batch recovery remains manual |
-| User Manager 6/7 | Version-specific provisioning, profile binding, per-command write-ahead intent + ACK, manual unresolved review | Real v6/v7 profile accounting and RADIUS end-to-end |
+| User Manager 6/7 | Version-specific provisioning, profile binding, per-command write-ahead intent + ACK, manual unresolved review; read-only user lifecycle classification with strict transfer-limit expiry; complete count-first and compatibility fallback reads, per-session cache | Real v6/v7 profile accounting and RADIUS end-to-end, physical large-inventory and administrative cleanup acceptance |
 | Delivery audit | Separate SQLite journal and append-only aggregate observations, no stored passwords/usernames | Provenance of each individual remote card after crashes (policy and implementation) |
 | Print sheet geometry | A3/A4, portrait/landscape, five orders, long/short-edge duplex, per-package persisted print settings | Printer hardware driver and physical cut/duplex calibration |
 | Card artwork | One shared physical scene for WPF preview, native and PDF; saved positions, optional text, credential overlap rejection, QR and red theme; dynamic price, binary capacity, uptime, validity and creation date per voucher | Visual/pixel parity with original Python raster layer editor, font/shaping metrics, and printed dynamic-field acceptance |
@@ -24,7 +24,7 @@ application has been ported. Statuses are evidence-scoped.
 | Legacy Python archive | Read-only import and paging work on a separate database | Full original archive lifecycle/rollback acceptance |
 | Licensing/trial | Existing independent port work and automated unit tests | Confirm original 480-hour/20-day policy under real license/offline environments |
 | Four Windows deliverables | CI QA Portable + Inno Setup Installer for win-x86/win-x64 with SHA-256 manifests, after Core + Release pass | Installer/portable **real host** acceptance, signing, final release approval |
-| Network management/Winbox-like tools | Selected read-only inventory/session management | Every original screen/service/operation and permissions matrix parity |
+| Network management/Winbox-like tools | Selected read-only inventory/session management; ten original source sidebar routes, original PNG icons, active/expired modal inventory; fixed no-scroll source-shaped dashboard | Original full maintenance/profile/operations actions, screen-by-screen behavior parity and real-host visual accessibility review |
 
 ## Key compatibility notes
 
@@ -93,7 +93,8 @@ Templates contain artwork and settings only: no generated voucher
 credentials are included. Exports use the existing atomic file writer,
 not the original Python installation or database.
 
-Pending: fully implement original per-layer color and size overrides,
+Per-layer text size/color overrides are now implemented in the common
+artwork scene and editable from the WPF card editor. Still pending:
 all original font families and image formats, image-crop calibration
 against physical printouts, and user-approved installation acceptance.
 
@@ -127,3 +128,41 @@ unsupported JSON. The base username color intentionally controls
 the password color as in the original `render.py`. Import/export of
 recognized layer styles is roundtrip-safe; unknown original settings
 continue to be preserved and disclosed as unrendered.
+
+## Original navigation, dashboard and User Manager lifecycle slice (2026-11-09)
+
+The original Python sidebar's ten primary routes and local image assets now
+drive one generated WPF navigation surface. The home dashboard has a fixed
+non-scroll grid with top banner, access/status panel, four core voucher
+metrics, a combined CPU/RAM card, local-only activity, quick actions,
+router facts, and the pinned original router-banner art in the new red theme.
+Some routes deliberately land on existing partial .NET screens instead of
+claiming unavailable original operations exist. Each sub-screen's complete
+functional and visual acceptance is still open.
+
+Active and expired voucher detail dialogs now use an explicit User Manager
+v6/v7 lifecycle scan, not current Hotspot/PPP session counters or a guessed
+expired timestamp. A voucher is **expired** only with positive verified
+Transfer Limit and consumed download+upload >= that limit. RouterOS 7 also
+requires used profile assignments without a newer active/running one.
+Disabled/unknown accounts remain distinct. Time Left and Total Time Left
+are never deletion/expiry proofs. This new path performs **no deletes**.
+
+Count-only and projected row counts must match or the inventory is not
+declared authoritative. A bounded sanitized unprojected fallback is allowed
+once if the RouterOS 6 user-list projection silently omits all usage fields,
+or RouterOS 7 profile-state projection omits its states. A true permission
+denial never authorizes an alternate privileged path. For v6, effective
+positive Transfer Limit can come from the joined profile, limitation and
+profile-limitation tables; a failed metadata read produces an explicit
+operator warning instead of an invented limit.
+
+The classified inventory is cached against the current live session for 90
+seconds; active/expired browsing, searching and 300-row paging never cause
+another network request. Automated real TCP RouterOS protocol regressions
+exercise cache reuse, fallback, count disagreement, permission degradation
+and the 25,000-account classification. Physical 24k+ network reads and
+the default RouterOS command timeout still need performance acceptance.
+Python has optional long-running maintenance and profile CRUD operations
+that are **not yet available** in the .NET UI. A successful Windows CI test
+does NOT prove the UI renders pixel-identically or all operations exist.
