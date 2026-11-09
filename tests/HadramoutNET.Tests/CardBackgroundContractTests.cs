@@ -24,9 +24,11 @@ public sealed class CardBackgroundContractTests
         var loaded = CardArtPresetCodec.FromSettings(saved);
         Assert.Equal(cfg.BackgroundData, loaded.BackgroundData);
         Assert.Equal(mode, loaded.BackgroundMode);
-        Assert.Equal(2, CardBackgroundAsset.Decode(loaded.BackgroundData).Width);
-        Assert.Equal(2, CardBackgroundAsset.Decode(loaded.BackgroundData).Height);
-        Assert.Equal(79, CardBackgroundAsset.Decode(loaded.BackgroundData).Png.Length);
+        CardBackgroundPng image = Assert.IsType<CardBackgroundPng>(
+            CardBackgroundAsset.Decode(loaded.BackgroundData));
+        Assert.Equal(2, image.Width);
+        Assert.Equal(2, image.Height);
+        Assert.Equal(79, image.Png.Length);
     }
 
     [Fact]
