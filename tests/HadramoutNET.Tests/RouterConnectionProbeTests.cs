@@ -73,7 +73,7 @@ public sealed class RouterConnectionProbeTests
         var probe = new RouterConnectionProbe();
         var result = await probe.TestAsync(
             new RouterProbeRequest("127.0.0.1", port.ToString(), "operator", "super-private",
-                RemoteMode: true), timeout.Token);
+                ConnectionMode: "remote"), timeout.Token);
         Assert.False(result.Success);
         Assert.Equal("authentication_rejected", result.Status);
         Assert.Equal(1, loginRequests);
@@ -145,7 +145,7 @@ public sealed class RouterConnectionProbeTests
     {
         var result = await new RouterConnectionProbe().TestAsync(
             new RouterProbeRequest(host, port, user, "private",
-                RemoteMode: mode == "remote", ModeOverrideForTests: mode));
+                ConnectionMode: mode));
         Assert.False(result.Success);
         Assert.Equal("invalid_settings", result.Status);
         Assert.DoesNotContain("private", result.Message);
@@ -172,7 +172,7 @@ public sealed class RouterConnectionProbeTests
 
         var result = await new RouterConnectionProbe().TestAsync(
             new RouterProbeRequest("http://127.0.0.1:8291/", port.ToString(), "operator",
-                "private", RemoteMode: true), timeout.Token);
+                "private", ConnectionMode: "remote"), timeout.Token);
         Assert.True(result.Success);
         Assert.Equal($"127.0.0.1:{port}", result.Endpoint);
         Assert.Equal("remote-probe", result.Identity);
@@ -186,11 +186,11 @@ public sealed class RouterConnectionProbeTests
         listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-        using var connected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var connected = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         Task server = Task.Run(async () =>
         {
             using var peer = await listener.AcceptTcpClientAsync(cancellation.Token);
-            connected.SetResult();
+            connected.SetResult(true);
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellation.Token);
         }, cancellation.Token);
         using var attempt = new CancellationTokenSource();
