@@ -45,6 +45,18 @@ public sealed record VoucherDeliveryStandardCheck(
     IReadOnlyDictionary<string, int> Counts);
 
 /// <summary>
+/// Per-ordinal stage facts without storing card usernames or passwords.
+/// Acknowledged means RouterOS returned successful !done for that command,
+/// not independent verification of the resulting account or profile.
+/// </summary>
+public sealed record VoucherDeliveryUserManagerStage(
+    long Id, long AttemptId, int Ordinal, int Version,
+    string Stage, string State, string PreparedUtc, string? AcknowledgedUtc)
+{
+    public bool CanAssumeCompleted => State == "acknowledged";
+}
+
+/// <summary>
 /// Append-once attempt identifiers with irreversible, narrowly allowed
 /// transitions. Stored only in HadramoutNET's isolated SQLite database.
 /// </summary>
@@ -125,6 +137,23 @@ public sealed class VoucherDeliveryJournal
             );
             CREATE INDEX IF NOT EXISTS ix_voucher_delivery_standard_checks_attempt
                 ON voucher_delivery_standard_checks(attempt_id,id DESC);
+            CREATE TABLE IF NOT EXISTS voucher_delivery_um_stages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                attempt_id INTEGER NOT NULL REFERENCES voucher_delivery_audit(id),
+                ordinal INTEGER NOT NULL CHECK(ordinal >= 1 AND ordinal <= 10000),
+                version INTEGER NOT NULL CHECK(version IN (6,7)),
+                stage TEXT NOT NULL CHECK(stage IN ('create_user','bind_profile')),
+                prepared_utc TEXT NOT NULL,
+                UNIQUE(attempt_id,ordinal,stage)
+            );
+            CREATE INDEX IF NOT EXISTS ix_um_stages_attempt
+                ON voucher_delivery_um_stages(attempt_id,id DESC);
+            CREATE TABLE IF NOT EXISTS voucher_delivery_um_stage_ack (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                stage_id INTEGER NOT NULL UNIQUE
+                    REFERENCES voucher_delivery_um_stages(id),
+                acknowledged_utc TEXT NOT NULL
+            );
             """;
         command.ExecuteNonQuery();
     }
@@ -450,6 +479,143 @@ public sealed class VoucherDeliveryJournal
                 reader.GetString(3), counts));
         }
         return result;
+    }
+
+    /// <summary>
+    /// An immutable intent record must be committed BEFORE the corresponding
+    /// User Manager add/bind command is sent. Any failed insert stops writes.
+    /// No identities, passwords, returned IDs, or RouterOS errors are saved.
+    /// </summary>
+    public long PrepareUserManagerStage(
+        long attemptId, int ordinal, int version, string stage)
+    {
+        if (attemptId <= 0)
+            throw new ArgumentOutOfRangeException(nameof(attemptId));
+        if (ordinal < 1 || ordinal > VoucherGenerator.MaxBatchSize)
+            throw new ArgumentOutOfRangeException(nameof(ordinal));
+        if (version is not (6 or 7) || stage is not ("create_user" or "bind_profile"))
+            throw new ArgumentException("مرحلة User Manager أو إصداره غير مسموح.");
+
+        using var db = Open();
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO voucher_delivery_um_stages(
+                attempt_id,ordinal,version,stage,prepared_utc)
+            SELECT a.id,$ordinal,$version,$stage,$time
+            FROM voucher_delivery_audit AS a
+            WHERE a.id=$attempt AND a.service='userman'
+              AND a.state='dispatching' AND $ordinal<=a.attempted
+              AND NOT EXISTS(
+                SELECT 1 FROM voucher_delivery_um_stages AS pending
+                LEFT JOIN voucher_delivery_um_stage_ack AS receipt
+                  ON receipt.stage_id=pending.id
+                WHERE pending.attempt_id=a.id AND receipt.id IS NULL
+              )
+              AND NOT EXISTS(
+                SELECT 1 FROM voucher_delivery_um_stages AS prior
+                WHERE prior.attempt_id=a.id AND prior.ordinal=$ordinal
+                  AND prior.stage=$stage
+              )
+              AND (
+                ($stage='create_user' AND
+                    ($ordinal=1 OR EXISTS(
+                        SELECT 1 FROM voucher_delivery_um_stages AS previous
+                        JOIN voucher_delivery_um_stage_ack AS p_ack
+                          ON p_ack.stage_id=previous.id
+                        WHERE previous.attempt_id=a.id
+                          AND previous.ordinal=$ordinal-1
+                          AND previous.stage='bind_profile'
+                          AND previous.version=$version
+                    )))
+                OR
+                ($stage='bind_profile' AND EXISTS(
+                    SELECT 1 FROM voucher_delivery_um_stages AS created
+                    JOIN voucher_delivery_um_stage_ack AS c_ack
+                      ON c_ack.stage_id=created.id
+                    WHERE created.attempt_id=a.id
+                      AND created.ordinal=$ordinal
+                      AND created.stage='create_user'
+                      AND created.version=$version
+                ))
+              )
+              AND NOT EXISTS(
+                SELECT 1 FROM voucher_delivery_um_stages AS conflicting
+                WHERE conflicting.attempt_id=a.id
+                  AND conflicting.version!=$version
+              )
+            """;
+        cmd.Parameters.AddWithValue("$attempt", attemptId);
+        cmd.Parameters.AddWithValue("$ordinal", ordinal);
+        cmd.Parameters.AddWithValue("$version", version);
+        cmd.Parameters.AddWithValue("$stage", stage);
+        cmd.Parameters.AddWithValue("$time",
+            DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+        if (cmd.ExecuteNonQuery() != 1)
+            throw new InvalidOperationException(
+                "مرحلة User Manager غير متطابقة أو لم تُؤكد المرحلة السابقة.");
+        cmd.Parameters.Clear();
+        cmd.CommandText = "SELECT last_insert_rowid()";
+        return Convert.ToInt64(cmd.ExecuteScalar(), CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Store an acknowledgement only after a successful RouterOS !done.
+    /// Never rewrite or delete the preparation record. If this write fails,
+    /// the publisher must stop and report uncertainty, not advance to binding.
+    /// </summary>
+    public void AcknowledgeUserManagerStage(long stageId)
+    {
+        if (stageId <= 0)
+            throw new InvalidOperationException("معرف مرحلة User Manager غير صالح.");
+        using var db = Open();
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO voucher_delivery_um_stage_ack(stage_id,acknowledged_utc)
+            SELECT stage.id,$time
+            FROM voucher_delivery_um_stages AS stage
+            JOIN voucher_delivery_audit AS a ON a.id=stage.attempt_id
+            WHERE stage.id=$stage AND a.service='userman' AND a.state='dispatching'
+              AND NOT EXISTS(
+                SELECT 1 FROM voucher_delivery_um_stage_ack AS receipt
+                WHERE receipt.stage_id=stage.id
+              )
+            """;
+        cmd.Parameters.AddWithValue("$time",
+            DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+        cmd.Parameters.AddWithValue("$stage", stageId);
+        if (cmd.ExecuteNonQuery() != 1)
+            throw new InvalidOperationException(
+                "إقرار مرحلة User Manager مسجل مسبقا أو غير متاح.");
+    }
+
+    public IReadOnlyList<VoucherDeliveryUserManagerStage> ReadUserManagerStages(
+        long attemptId, int limit = 200)
+    {
+        if (attemptId <= 0) throw new ArgumentOutOfRangeException(nameof(attemptId));
+        if (limit is < 1 or > 2000) throw new ArgumentOutOfRangeException(nameof(limit));
+        using var db = Open(readOnly: true);
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            SELECT s.id,s.attempt_id,s.ordinal,s.version,s.stage,
+                s.prepared_utc,a.acknowledged_utc
+            FROM voucher_delivery_um_stages AS s
+            LEFT JOIN voucher_delivery_um_stage_ack AS a ON a.stage_id=s.id
+            WHERE s.attempt_id=$attempt ORDER BY s.id DESC LIMIT $limit
+            """;
+        cmd.Parameters.AddWithValue("$attempt", attemptId);
+        cmd.Parameters.AddWithValue("$limit", limit);
+        using var reader = cmd.ExecuteReader();
+        var rows = new List<VoucherDeliveryUserManagerStage>();
+        while (reader.Read())
+        {
+            string? ackTime = reader.IsDBNull(6) ? null : reader.GetString(6);
+            rows.Add(new VoucherDeliveryUserManagerStage(
+                reader.GetInt64(0), reader.GetInt64(1),
+                reader.GetInt32(2), reader.GetInt32(3), reader.GetString(4),
+                ackTime is null ? "prepared" : "acknowledged",
+                reader.GetString(5), ackTime));
+        }
+        return rows;
     }
 
     private SqliteConnection Open(bool readOnly = false)
