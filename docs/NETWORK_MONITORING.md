@@ -60,7 +60,11 @@ SHA, including compilation of the WPF UI.
   read-check/write sequence is not atomic against other router users.
   Targeted-session attempts are now durably audited (see
   `docs/MAINTENANCE_AUDIT.md`); hardware acceptance, tamper protection
-  and post-operation reconciliation remain required before release.
+  and live hardware acceptance remain required before release.
+  An initial **read-only**, manually triggered session-record
+  reconciliation has now been added with independent append-only
+  observations; it does not establish the cause of disconnection.
+  See `docs/MAINTENANCE_AUDIT.md`.
 
 ## Work still required before full Python parity
 
