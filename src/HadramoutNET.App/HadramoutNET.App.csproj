@@ -9,5 +9,9 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../HadramoutNET.Core/HadramoutNET.Core.csproj" />
+    <!-- Link original visual assets by copy only. The Python repo and
+         pinned source images are never moved or modified. -->
+    <Resource Include="../../reference/python-v1.1.3/assets/dashboard_icons/*.png"
+              Link="Assets/DashboardIcons/%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>
