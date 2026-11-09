@@ -78,7 +78,11 @@ public sealed class SessionMaintenanceJournalTests
     {
         using var fixture = new TempDb();
         string python = Path.Combine(fixture.Root, "nidi_cards.db");
-        using (var db = new SqliteConnection($"Data Source={python}"))
+        using (var db = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = python,
+            Pooling = false
+        }.ToString()))
         {
             db.Open();
             using var query = db.CreateCommand();
