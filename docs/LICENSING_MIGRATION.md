@@ -33,19 +33,25 @@ and (when available) the ProgramData machine mirror. Python protects the state
 with Windows machine DPAPI and reconciles all mirrors by taking the **oldest**
 first, **latest** last and highest authorized activation revision.
 
-The current .NET TrialAccessPolicy is a tested pure calculator. It does
-**not** create, overwrite, migrate, erase, repair or read the original trial
-state. The first start must not change during renewal. If this record cannot
-be validated in the new application, fail closed and require a valid paid
-license; **never** create a fresh trial simply because a reader failed.
+The current .NET TrialAccessPolicy is a tested pure calculator. The new
+LegacyTrialStateReader reads the protected original file, HKCU registry and
+ProgramData mirrors **read-only** using Windows machine-scoped DPAPI, validates
+schema 1/2 and matching machine fingerprint, and merges the oldest start,
+latest verified clock and highest activation revision. Any invalid, missing or
+corrupted mirror is never silently treated as a new first activation. It does
+**not** create, overwrite, migrate, erase, repair or reset existing state.
+Only isolated synthetic DPAPI fixtures have been exercised in Windows CI;
+real existing installations still require acceptance.
 
 ## Blockers before live UI and release
 
-1. Implement a Windows-only, read-only protected trial reader compatible with
-   the original DPAPI, Registry and ProgramData mirrors; verify with fixtures
-   on x86/x64 and actual existing Windows installations. Do not modify the
-   original mirrors during development. Handle invalid/missing/partially
-   corrupted mirrors explicitly; preserve earliest first and latest last.
+1. Validate the now-implemented read-only Windows trial mirror reader against
+   **real pre-existing Python installations** including legacy schema-1 state,
+   missing/corrupt mirrors, x86/x64 MachineGuid and clock edge cases. Use a
+   separately provided test machine or redacted fixtures, never customer
+   licensing state in CI. No mirror write/repair is permitted at this stage.
+   The ability to begin a previously unstarted trial safely is **not**
+   implemented and must not be inferred from a missing state.
 2. Implement secure, isolated code storage and device identity retrieval:
    64-bit MachineGuid registry view on x86/x64, same SHA-256 prefixes as Python;
    no accidental paid entitlement from a saved code alone.
