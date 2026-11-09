@@ -39,6 +39,11 @@ public sealed record VoucherDeliveryCheck(
     long Id, long AttemptId, string ObservedUtc, int Version,
     IReadOnlyDictionary<string, int> Counts);
 
+/// <summary>Metadata-only, append-only Hotspot/PPPoE read observation.</summary>
+public sealed record VoucherDeliveryStandardCheck(
+    long Id, long AttemptId, string ObservedUtc, string Service,
+    IReadOnlyDictionary<string, int> Counts);
+
 /// <summary>
 /// Append-once attempt identifiers with irreversible, narrowly allowed
 /// transitions. Stored only in HadramoutNET's isolated SQLite database.
@@ -65,6 +70,13 @@ public sealed class VoucherDeliveryJournal
         new(StringComparer.Ordinal) {
             "not_found", "disabled", "profile_active", "profile_ready",
             "profile_used", "profile_other", "profile_missing", "profile_unverified"
+        };
+
+    private static readonly HashSet<string> StandardStates =
+        new(StringComparer.Ordinal)
+        {
+            "not_found", "disabled", "profile_matches",
+            "profile_other", "profile_unknown", "service_other"
         };
 
     private readonly string _path;
@@ -104,6 +116,15 @@ public sealed class VoucherDeliveryJournal
             );
             CREATE INDEX IF NOT EXISTS ix_voucher_delivery_checks_attempt
                 ON voucher_delivery_checks(attempt_id,id DESC);
+            CREATE TABLE IF NOT EXISTS voucher_delivery_standard_checks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                attempt_id INTEGER NOT NULL REFERENCES voucher_delivery_audit(id),
+                observed_utc TEXT NOT NULL,
+                service TEXT NOT NULL CHECK(service IN ('hotspot','ppp')),
+                counts_json TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_voucher_delivery_standard_checks_attempt
+                ON voucher_delivery_standard_checks(attempt_id,id DESC);
             """;
         command.ExecuteNonQuery();
     }
@@ -346,6 +367,89 @@ public sealed class VoucherDeliveryJournal
                 reader.GetInt32(3), counts));
         }
         return checks;
+    }
+
+    /// <summary>
+    /// A successful observation is not proof of any earlier write or login.
+    /// The original upload state is intentionally immutable and unresolved.
+    /// </summary>
+    public VoucherDeliveryStandardCheck AppendStandardVerification(
+        long attemptId, string routerIdentity, string routerEndpoint,
+        string service, IReadOnlyDictionary<string, int> counts)
+    {
+        if (attemptId <= 0) throw new ArgumentOutOfRangeException(nameof(attemptId));
+        if (!Valid(routerIdentity, 160) || !Valid(routerEndpoint, 256) ||
+            service is not ("hotspot" or "ppp"))
+            throw new ArgumentException("هوية الراوتر أو الخدمة غير صالحة.");
+        ArgumentNullException.ThrowIfNull(counts);
+        if (counts.Count == 0)
+            throw new ArgumentException("ملخص التحقق فارغ.", nameof(counts));
+        long total = 0;
+        foreach (var row in counts)
+        {
+            if (!StandardStates.Contains(row.Key) ||
+                (service == "hotspot" && row.Key == "service_other") ||
+                row.Value < 0)
+                throw new ArgumentException("ملخص النتائج يحتوي حالة غير مسموحة.",
+                    nameof(counts));
+            total += row.Value;
+        }
+        if (total is < 1 or > 5000)
+            throw new ArgumentException("عدد نتائج الفحص غير صالح.", nameof(counts));
+
+        string observedUtc = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+        using var db = Open();
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO voucher_delivery_standard_checks(
+                attempt_id, observed_utc, service, counts_json)
+            SELECT id,$time,$service,$counts FROM voucher_delivery_audit
+            WHERE id=$id AND router_identity=$identity AND router_endpoint=$endpoint
+              AND service=$service AND attempted=$total
+              AND state IN ('started','dispatching','partial','uncertain')
+            """;
+        cmd.Parameters.AddWithValue("$time", observedUtc);
+        cmd.Parameters.AddWithValue("$service", service);
+        cmd.Parameters.AddWithValue("$counts", JsonSerializer.Serialize(counts));
+        cmd.Parameters.AddWithValue("$id", attemptId);
+        cmd.Parameters.AddWithValue("$identity", routerIdentity);
+        cmd.Parameters.AddWithValue("$endpoint", routerEndpoint);
+        cmd.Parameters.AddWithValue("$total", total);
+        if (cmd.ExecuteNonQuery() != 1)
+            throw new InvalidOperationException(
+                "لا يمكن تسجيل فحص على محاولة خدمة أو راوتر أو عدد غير مطابق.");
+        cmd.Parameters.Clear();
+        cmd.CommandText = "SELECT last_insert_rowid()";
+        long id = Convert.ToInt64(cmd.ExecuteScalar(), CultureInfo.InvariantCulture);
+        return new VoucherDeliveryStandardCheck(id, attemptId, observedUtc,
+            service, counts.ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal));
+    }
+
+    public IReadOnlyList<VoucherDeliveryStandardCheck> ReadStandardChecks(
+        long attemptId, int limit = 30)
+    {
+        if (attemptId <= 0) throw new ArgumentOutOfRangeException(nameof(attemptId));
+        if (limit is < 1 or > 200) throw new ArgumentOutOfRangeException(nameof(limit));
+        using var db = Open(readOnly: true);
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            SELECT id,attempt_id,observed_utc,service,counts_json
+            FROM voucher_delivery_standard_checks
+            WHERE attempt_id=$id ORDER BY id DESC LIMIT $limit
+            """;
+        cmd.Parameters.AddWithValue("$id", attemptId);
+        cmd.Parameters.AddWithValue("$limit", limit);
+        using var reader = cmd.ExecuteReader();
+        var result = new List<VoucherDeliveryStandardCheck>();
+        while (reader.Read())
+        {
+            var counts = JsonSerializer.Deserialize<Dictionary<string,int>>(
+                reader.GetString(4)) ?? new Dictionary<string,int>();
+            result.Add(new VoucherDeliveryStandardCheck(
+                reader.GetInt64(0), reader.GetInt64(1), reader.GetString(2),
+                reader.GetString(3), counts));
+        }
+        return result;
     }
 
     private SqliteConnection Open(bool readOnly = false)
