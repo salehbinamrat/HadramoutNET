@@ -39,6 +39,7 @@ public partial class WorkspaceWindow : Window
     private readonly DispatcherTimer _heartbeat = new();
     private readonly CancellationTokenSource _cancel = new();
     private IReadOnlyList<Voucher> _generated = [];
+    private VoucherDraftTarget? _draftTarget;
     private PrintLayoutOptions _printLayout = new();
     private CardArtOptions _cardArt = new();
     private bool _published;
@@ -347,6 +348,34 @@ public partial class WorkspaceWindow : Window
         Close();
     }
 
+    private CardGenerationOptions CurrentGenerationOptions()
+    {
+        if (!int.TryParse(QtyBox.Text, NumberStyles.None,
+                CultureInfo.InvariantCulture, out int quantity) ||
+            !int.TryParse(CardLengthBox.Text, NumberStyles.None,
+                CultureInfo.InvariantCulture, out int codeLength) ||
+            !int.TryParse(PasswordLengthBox.Text, NumberStyles.None,
+                CultureInfo.InvariantCulture, out int passwordLength) ||
+            !int.TryParse(StartSequenceBox.Text, NumberStyles.None,
+                CultureInfo.InvariantCulture, out int startSequence))
+            throw new CardGenerationException(
+                "أدخل أعدادا إنجليزية صحيحة للكمية والأطوال وبداية الترقيم.");
+
+        var options = new CardGenerationOptions(
+            Quantity: quantity,
+            CodeLength: codeLength,
+            UsernameCharacters: CardAlphabetBox.Text,
+            Format: Choice(CardFormatCombo),
+            PasswordLength: passwordLength,
+            PasswordCharacters: PasswordAlphabetBox.Text,
+            SequenceMode: Choice(SequenceModeCombo),
+            AvoidDuplicate: true,
+            StartSequence: startSequence,
+            UsernamePrefix: CardPrefixBox.Text);
+        CardGenerationPresetCodec.Validate(options);
+        return options;
+    }
+
     private void GenerateCards_Click(object sender, RoutedEventArgs e)
     {
         if (_uploading || _verifyingUmDraft)
@@ -357,19 +386,16 @@ public partial class WorkspaceWindow : Window
         if (!ConfirmCurrentAccess()) return;
         try
         {
-            if (!int.TryParse(QtyBox.Text, NumberStyles.None,
-                    CultureInfo.InvariantCulture, out int quantity) ||
-                !int.TryParse(CardLengthBox.Text, NumberStyles.None,
-                    CultureInfo.InvariantCulture, out int length))
-                throw new ArgumentException("الكمية والطول يجب أن يكونا أرقاما إنجليزية صحيحة.");
-            string mode = Choice(CardFormatCombo);
-            var options = new CardGenerationOptions(
-                quantity, length, CardAlphabetBox.Text, mode,
-                PasswordLength: 6, PasswordCharacters: "abcdefghijklmnopqrstuvwxyz0123456789");
+            CardGenerationOptions options = CurrentGenerationOptions();
+            VoucherDraftTarget target = VoucherDraftTarget.Create(
+                Choice(CardServiceCombo), CardProfileBox.Text, UmCustomerBox.Text);
 
             // This is a LOCAL draft. A remote uniqueness and profile check is
             // mandatory before actually importing it to the router.
-            _generated = VoucherGenerator.Generate(options, _ => false);
+            IReadOnlyList<Voucher> nextDraft =
+                VoucherGenerator.Generate(options, _ => false);
+            _generated = nextDraft;
+            _draftTarget = target;
             _published = false;
             _deliveryUncertain = false;
             CardGrid.ItemsSource = _generated;
@@ -400,6 +426,13 @@ public partial class WorkspaceWindow : Window
         }
         string service = Choice(CardServiceCombo);
         string profile = CardProfileBox.Text.Trim();
+        string customer = UmCustomerBox.Text.Trim();
+        if (_draftTarget is null || !_draftTarget.Matches(service, profile, customer))
+        {
+            CardsNotice.Text = "تغيرت الخدمة أو الباقة أو مالك User Manager بعد إنشاء المسودة. " +
+                "أنشئ مسودة جديدة للتأكد من هوية الجهة قبل الرفع.";
+            return;
+        }
         MessageBoxResult confirmed = MessageBox.Show(this,
             $"سيُرسل {_generated.Count} كرت إلى {service} بالباقة «{profile}».\n" +
             "سيُفحص عدم التكرار وصلاحية الباقة قبل البدء.\n" +
@@ -416,7 +449,7 @@ public partial class WorkspaceWindow : Window
         try
         {
             VoucherPublishReport result = await _deliveryCoordinator.PublishAsync(
-                _session, _generated, service, profile, UmCustomerBox.Text.Trim(),
+                _session, _generated, service, profile, customer,
                 confirmed: true, _cancel.Token);
             if (!IsLoaded) return;
             if (result.Success) _published = true;
@@ -450,9 +483,12 @@ public partial class WorkspaceWindow : Window
     private async void VerifyUmDraft_Click(object sender, RoutedEventArgs e)
     {
         if (_verifyingUmDraft || _uploading || !ConfirmCurrentAccess()) return;
-        if (Choice(CardServiceCombo) != "userman" || _generated.Count == 0)
+        if (Choice(CardServiceCombo) != "userman" || _generated.Count == 0 ||
+            _draftTarget is null ||
+            !_draftTarget.Matches(Choice(CardServiceCombo), CardProfileBox.Text,
+                UmCustomerBox.Text))
         {
-            CardsNotice.Text = "اختر User Manager وأنشئ مسودة كروت قبل التحقق.";
+            CardsNotice.Text = "اختر User Manager وأنشئ مسودة للباقة الحالية قبل التحقق.";
             return;
         }
 
@@ -855,7 +891,10 @@ public partial class WorkspaceWindow : Window
         if (!ConfirmCurrentAccess() || _packages is null) return;
         try
         {
-            var settings = new Dictionary<string, JsonElement>
+            var settings = CardGenerationPresetCodec.ToSettings(
+                CurrentGenerationOptions());
+            settings["create.quantity"] = JsonSerializer.SerializeToElement(QtyBox.Text);
+            var legacy = new Dictionary<string, JsonElement>
             {
                 ["create.quantity"] = JsonSerializer.SerializeToElement(QtyBox.Text),
                 ["create.code_length"] = JsonSerializer.SerializeToElement(CardLengthBox.Text),
@@ -865,6 +904,8 @@ public partial class WorkspaceWindow : Window
                 ["create.profile"] = JsonSerializer.SerializeToElement(CardProfileBox.Text),
                 ["create.customer"] = JsonSerializer.SerializeToElement(UmCustomerBox.Text)
             };
+            foreach (var pair in legacy)
+                settings[pair.Key] = pair.Value;
             foreach (var pair in PrintLayoutPresetCodec.ToSettings(_printLayout))
                 settings[pair.Key] = pair.Value;
             foreach (var pair in CardArtPresetCodec.ToSettings(_cardArt))
@@ -894,14 +935,16 @@ public partial class WorkspaceWindow : Window
         if (PackagesGrid.SelectedItem is not PackagePreset selected) return;
         PrintLayoutOptions layout;
         CardArtOptions artwork;
+        CardGenerationOptions generation;
         try
         {
             layout = PrintLayoutPresetCodec.FromSettings(selected.Settings);
             artwork = CardArtPresetCodec.FromSettings(selected.Settings);
+            generation = CardGenerationPresetCodec.FromSettings(selected.Settings);
         }
-        catch (PrintLayoutException)
+        catch (ArgumentException)
         {
-            WorkspaceStatus.Text = "تعذر تحميل تخطيط الطباعة من الباقة: إعدادات غير صالحة؛ لم تُطبق أي خيارات.";
+            WorkspaceStatus.Text = "تعذر تحميل الباقة: إعدادات الإنشاء أو التصميم أو الطباعة غير صالحة؛ لم تُطبق أي خيارات.";
             return;
         }
         _printLayout = layout;
@@ -909,18 +952,19 @@ public partial class WorkspaceWindow : Window
         PrintLayoutInfo.Text = DescribePrintLayout(layout);
         PackageNameBox.Text = selected.Name;
         var values = selected.Settings;
-        if (values.TryGetValue("create.quantity", out var q) &&
-            q.ValueKind == JsonValueKind.String) QtyBox.Text = q.GetString();
-        if (values.TryGetValue("create.code_length", out var len) &&
-            len.ValueKind == JsonValueKind.String) CardLengthBox.Text = len.GetString();
-        if (values.TryGetValue("create.characters", out var chars) &&
-            chars.ValueKind == JsonValueKind.String) CardAlphabetBox.Text = chars.GetString();
+        QtyBox.Text = generation.Quantity.ToString(CultureInfo.InvariantCulture);
+        CardLengthBox.Text = generation.CodeLength.ToString(CultureInfo.InvariantCulture);
+        CardAlphabetBox.Text = generation.UsernameCharacters;
+        CardPrefixBox.Text = generation.UsernamePrefix;
+        PasswordLengthBox.Text = generation.PasswordLength.ToString(CultureInfo.InvariantCulture);
+        PasswordAlphabetBox.Text = generation.PasswordCharacters;
+        StartSequenceBox.Text = generation.StartSequence.ToString(CultureInfo.InvariantCulture);
+        SelectChoice(SequenceModeCombo, generation.SequenceMode);
         if (values.TryGetValue("create.profile", out var profile) &&
             profile.ValueKind == JsonValueKind.String) CardProfileBox.Text = profile.GetString();
         if (values.TryGetValue("create.customer", out var owner) &&
             owner.ValueKind == JsonValueKind.String) UmCustomerBox.Text = owner.GetString();
-        if (values.TryGetValue("create.format", out var format) &&
-            format.ValueKind == JsonValueKind.String) SelectChoice(CardFormatCombo, format.GetString());
+        SelectChoice(CardFormatCombo, generation.Format);
         if (values.TryGetValue("create.service", out var service) &&
             service.ValueKind == JsonValueKind.String) SelectChoice(CardServiceCombo, service.GetString());
         WorkspaceStatus.Text = "استُعيدت خيارات إنشاء الكروت وتخطيط الطباعة وتصميم البطاقة الخاص بهذه الباقة.";
