@@ -287,6 +287,10 @@
                                     Click="ExportExcel_Click" Margin="4"/>
                             <Button Content="تخصيص تصميم الكرت" Width="175" Height="36"
                                     Click="EditCardArtwork_Click" Margin="4"/>
+                            <Button Content="استيراد قالب JSON" Width="155" Height="36"
+                                    Click="ImportCardTemplate_Click" Margin="4"/>
+                            <Button Content="تصدير قالب JSON" Width="155" Height="36"
+                                    Click="ExportCardTemplate_Click" Margin="4"/>
                             <Button Content="إعدادات تخطيط الطباعة" Width="190" Height="36"
                                     Click="EditPrintLayout_Click" Margin="4"/>
                             <Button Content="معاينة الورقة" Width="145" Height="36"
