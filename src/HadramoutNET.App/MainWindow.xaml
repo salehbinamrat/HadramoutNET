@@ -66,6 +66,8 @@
                                        VerticalAlignment="Center" Margin="15,0"/>
                         </DockPanel>
                     </Border>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="14,10" Orientation="Vertical">
                         <Border BorderBrush="{StaticResource SandBorder}" BorderThickness="1"
                                 Background="White" Padding="12,10" Margin="0,0,0,10">
@@ -101,9 +103,12 @@
                                            FontSize="12" TextWrapping="Wrap"
                                            Foreground="{StaticResource TextMuted}"
                                            Margin="0,0,0,7"/>
-                                <Button Content="بدء التجربة المجانية — 20 يوماً"
+                                <Button x:Name="TrialStartButton" Content="اختيار التجربة المجانية — 20 يوما"
                                         Style="{StaticResource NavyReplacementButton}"
-                                        IsEnabled="False" Height="35"/>
+                                        Click="TrialStart_Click" Height="35"/>
+                                <TextBlock x:Name="TrialStatusText" Margin="0,7,0,0"
+                                           FontSize="12" TextWrapping="Wrap"
+                                           Foreground="{StaticResource TextMuted}"/>
                             </StackPanel>
                         </Border>
 
@@ -172,11 +177,12 @@
                                 Style="{StaticResource NavyReplacementButton}"/>
                         <Button x:Name="RouterLoginButton" Content="تسجيل الدخول" Height="48" Margin="0,8,0,0"
                                 Style="{StaticResource NavyReplacementButton}"
-                                IsEnabled="False"/>
-                        <TextBlock x:Name="RouterProbeStatus" Text="اختبار الاتصال للقراءة فقط؛ لا يبدأ التجربة ولا يمنح دخول البرنامج."
+                                Click="RouterLogin_Click"/>
+                        <TextBlock x:Name="RouterProbeStatus" Text="اختبار الاتصال مستقل عن الدخول؛ لا يبدأ التجربة."
                                    Foreground="#A0283E" FontSize="13"
                                    TextWrapping="Wrap" TextAlignment="Center" Margin="5,9"/>
                     </StackPanel>
+                    </ScrollViewer>
                 </DockPanel>
             </Border>
 

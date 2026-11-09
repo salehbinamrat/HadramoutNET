@@ -1,0 +1,279 @@
+<Window x:Class="HadramoutNET.App.WorkspaceWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="حضرموت — إدارة الشبكات وطباعة الكروت"
+        Width="1280" Height="820" MinWidth="1040" MinHeight="680"
+        WindowStartupLocation="CenterScreen"
+        FlowDirection="RightToLeft"
+        FontFamily="Arial" FontSize="14"
+        Background="{StaticResource WindowSand}"
+        Loaded="WorkspaceLoaded">
+    <Grid Background="{StaticResource WindowSand}" Margin="9">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="192"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <Border Grid.Column="0" Margin="0,0,0,0"
+                Background="{StaticResource GlossyRed}" CornerRadius="8">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Margin="8,16">
+                    <TextBlock Text="حضرموت" FontSize="27" FontWeight="Bold"
+                               Foreground="White" TextAlignment="Center"/>
+                    <TextBlock Text=".NET 10" FontSize="12" Foreground="#FFE2C4"
+                               TextAlignment="Center" Margin="0,0,0,18"/>
+                    <Border Height="1" Margin="9,0,9,14" Background="#D79775"/>
+                    <Button Content="الرئيسية" Style="{StaticResource SidebarButton}"
+                            Click="ShowDashboard_Click"/>
+                    <Button Content="إنشاء الكروت" Style="{StaticResource SidebarButton}"
+                            Click="ShowCards_Click"/>
+                    <Button Content="مستخدمو Hotspot" Style="{StaticResource SidebarButton}"
+                            Click="ShowHotspot_Click"/>
+                    <Button Content="الباقات" Style="{StaticResource SidebarButton}"
+                            Click="ShowPackages_Click"/>
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Bottom" Margin="8,8,8,18">
+                    <Button Content="تسجيل الخروج" Height="42"
+                            Style="{StaticResource SidebarButton}" Click="Logout_Click"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+        <Grid Grid.Column="1" Margin="12,0,0,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="65"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="35"/>
+            </Grid.RowDefinitions>
+            <Border Grid.Row="0" Background="{StaticResource CreamPanel}"
+                    BorderBrush="{StaticResource SandBorder}" BorderThickness="1"
+                    CornerRadius="7" Margin="0,0,0,8" Padding="14,6">
+                <DockPanel LastChildFill="True">
+                    <TextBlock DockPanel.Dock="Right"
+                               Text="حضرموت لإدارة الشبكات وطباعة الكروت"
+                               FontWeight="Bold" FontSize="20"
+                               VerticalAlignment="Center"
+                               Foreground="{StaticResource DarkRed}"/>
+                    <TextBlock x:Name="RouterCaption" Text="جاري الاتصال"
+                               FontSize="13" TextAlignment="Left"
+                               VerticalAlignment="Center"
+                               Foreground="{StaticResource TextMuted}"/>
+                </DockPanel>
+            </Border>
+
+            <TabControl x:Name="Pages" Grid.Row="1"
+                        BorderBrush="{StaticResource SandBorder}"
+                        Background="{StaticResource CreamPanel}"
+                        FontFamily="Arial" FontSize="14">
+                <TabItem Header="الرئيسية">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="14">
+                            <DockPanel>
+                                <TextBlock Text="حالة الشبكة" Style="{StaticResource PageHeader}"
+                                           DockPanel.Dock="Right"/>
+                                <Button Content="تحديث البيانات" DockPanel.Dock="Left"
+                                        Width="145" Height="35"
+                                        Click="RefreshDashboard_Click"/>
+                            </DockPanel>
+                            <TextBlock x:Name="DashboardNotice" Margin="0,12"
+                                       Text="يتم جلب البيانات من الراوتر المتصل"
+                                       Foreground="{StaticResource TextMuted}"/>
+                            <UniformGrid Columns="3" Rows="2" Margin="0,10,0,18">
+                                <Border BorderBrush="{StaticResource SandBorder}" Background="#FFF2E6"
+                                        BorderThickness="1" Margin="5" Padding="17">
+                                    <StackPanel>
+                                        <TextBlock Text="معالج الراوتر" FontWeight="Bold"/>
+                                        <TextBlock x:Name="CpuValue" Text="—" FontSize="28"
+                                                   Foreground="{StaticResource DarkRed}"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border BorderBrush="{StaticResource SandBorder}" Background="#FFF2E6"
+                                        BorderThickness="1" Margin="5" Padding="17">
+                                    <StackPanel>
+                                        <TextBlock Text="استهلاك الذاكرة" FontWeight="Bold"/>
+                                        <TextBlock x:Name="RamValue" Text="—" FontSize="28"
+                                                   Foreground="{StaticResource DarkRed}"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border BorderBrush="{StaticResource SandBorder}" Background="#FFF2E6"
+                                        BorderThickness="1" Margin="5" Padding="17">
+                                    <StackPanel>
+                                        <TextBlock Text="كروت Hotspot" FontWeight="Bold"/>
+                                        <TextBlock x:Name="HotspotTotalValue" Text="—" FontSize="28"
+                                                   Foreground="{StaticResource DarkRed}"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border BorderBrush="{StaticResource SandBorder}" Background="#FFF2E6"
+                                        BorderThickness="1" Margin="5" Padding="17">
+                                    <StackPanel>
+                                        <TextBlock Text="متصلو Hotspot" FontWeight="Bold"/>
+                                        <TextBlock x:Name="HotspotActiveValue" Text="—" FontSize="28"
+                                                   Foreground="{StaticResource DarkRed}"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border BorderBrush="{StaticResource SandBorder}" Background="#FFF2E6"
+                                        BorderThickness="1" Margin="5" Padding="17">
+                                    <StackPanel>
+                                        <TextBlock Text="متصلو PPPoE" FontWeight="Bold"/>
+                                        <TextBlock x:Name="PppActiveValue" Text="—" FontSize="28"
+                                                   Foreground="{StaticResource DarkRed}"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border BorderBrush="{StaticResource SandBorder}" Background="#FFF2E6"
+                                        BorderThickness="1" Margin="5" Padding="17">
+                                    <StackPanel>
+                                        <TextBlock Text="مستخدمو User Manager v6" FontWeight="Bold"/>
+                                        <TextBlock x:Name="UserManagerValue" Text="—" FontSize="28"
+                                                   Foreground="{StaticResource DarkRed}"/>
+                                    </StackPanel>
+                                </Border>
+                            </UniformGrid>
+                            <TextBlock x:Name="RouterVersionText" Text="إصدار RouterOS: —"
+                                       FontSize="15" Margin="10,5"/>
+                            <TextBlock x:Name="RouterUptimeText" Text="وقت تشغيل الراوتر: —"
+                                       FontSize="15" Margin="10,5"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <TabItem Header="إنشاء الكروت">
+                    <Grid Margin="12">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0"
+                                   Text="توليد مسودات كروت محلية — لا ترفع إلى الراوتر تلقائيا"
+                                   Foreground="{StaticResource DarkRed}"
+                                   FontWeight="Bold" Margin="5,4,5,11"/>
+                        <WrapPanel Grid.Row="1" FlowDirection="RightToLeft" Margin="0,0,0,8">
+                            <StackPanel Margin="5">
+                                <TextBlock Text="الكمية"/>
+                                <TextBox x:Name="QtyBox" Width="95" Text="20"/>
+                            </StackPanel>
+                            <StackPanel Margin="5">
+                                <TextBlock Text="طول الرقم"/>
+                                <TextBox x:Name="CardLengthBox" Width="95" Text="8"/>
+                            </StackPanel>
+                            <StackPanel Margin="5">
+                                <TextBlock Text="صيغة الدخول"/>
+                                <ComboBox x:Name="CardFormatCombo" Width="200" Height="35"
+                                          SelectedIndex="0">
+                                    <ComboBoxItem Content="اسم مستخدم فقط" Tag="code_only"/>
+                                    <ComboBoxItem Content="اسم وكلمة مرور متطابقان" Tag="code_same_password"/>
+                                    <ComboBoxItem Content="اسم وكلمة مرور مختلفان" Tag="code_password"/>
+                                </ComboBox>
+                            </StackPanel>
+                            <StackPanel Margin="5">
+                                <TextBlock Text="نوع الخدمة"/>
+                                <ComboBox x:Name="CardServiceCombo" Width="135" Height="35"
+                                          SelectedIndex="0">
+                                    <ComboBoxItem Content="Hotspot" Tag="hotspot"/>
+                                    <ComboBoxItem Content="PPPoE" Tag="ppp"/>
+                                </ComboBox>
+                            </StackPanel>
+                            <StackPanel Margin="5">
+                                <TextBlock Text="اسم الباقة"/>
+                                <TextBox x:Name="CardProfileBox" Width="140" Text="default"/>
+                            </StackPanel>
+                            <StackPanel Margin="5">
+                                <TextBlock Text="الحروف/الأرقام"/>
+                                <TextBox x:Name="CardAlphabetBox" Width="145"
+                                         Text="0123456789"/>
+                            </StackPanel>
+                        </WrapPanel>
+                        <DataGrid x:Name="CardGrid" Grid.Row="2"
+                                  AutoGenerateColumns="False" IsReadOnly="True"
+                                  CanUserAddRows="False" EnableRowVirtualization="True"
+                                  BorderBrush="{StaticResource SandBorder}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="م" Binding="{Binding Sequence}" Width="90"/>
+                                <DataGridTextColumn Header="اسم المستخدم" Binding="{Binding Username}" Width="*"/>
+                                <DataGridTextColumn Header="كلمة المرور" Binding="{Binding Password}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <WrapPanel Grid.Row="3" Margin="0,10,0,0">
+                            <Button Content="توليد مسودة" Width="130" Height="36"
+                                    Click="GenerateCards_Click" Margin="4"
+                                    Style="{StaticResource NavyReplacementButton}"/>
+                            <Button Content="Excel" Width="95" Height="36"
+                                    Click="ExportExcel_Click" Margin="4"/>
+                            <Button Content="CSV" Width="90" Height="36"
+                                    Click="ExportCsv_Click" Margin="4"/>
+                            <Button Content="RouterOS .rsc" Width="135" Height="36"
+                                    Click="ExportScript_Click" Margin="4"/>
+                            <TextBlock x:Name="CardsNotice" VerticalAlignment="Center"
+                                       Foreground="{StaticResource TextMuted}"
+                                       Text="0 كرت" Margin="8,0"/>
+                        </WrapPanel>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="مستخدمو Hotspot">
+                    <Grid Margin="12">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <DockPanel Margin="4,0,4,10">
+                            <TextBlock Text="الكروت والمستخدمون على MikroTik" DockPanel.Dock="Right"
+                                       VerticalAlignment="Center"
+                                       Style="{StaticResource PageHeader}"/>
+                            <Button Content="تحديث" Width="100" Height="35"
+                                    DockPanel.Dock="Left" Click="RefreshHotspot_Click"/>
+                        </DockPanel>
+                        <DataGrid x:Name="UsersGrid" Grid.Row="1"
+                                  AutoGenerateColumns="False" IsReadOnly="True"
+                                  CanUserAddRows="False" EnableRowVirtualization="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="اسم المستخدم" Binding="{Binding Name}" Width="*"/>
+                                <DataGridTextColumn Header="الباقة" Binding="{Binding Profile}" Width="*"/>
+                                <DataGridTextColumn Header="معطل" Binding="{Binding Disabled}" Width="100"/>
+                                <DataGridTextColumn Header="المدة" Binding="{Binding LimitUptime}" Width="120"/>
+                                <DataGridTextColumn Header="السعة" Binding="{Binding LimitBytes}" Width="120"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="الباقات">
+                    <Grid Margin="12">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="قوالب إعدادات الباقات المستقلة — تحفظ بعد الضغط على حفظ"
+                                   Foreground="{StaticResource DarkRed}" FontWeight="Bold"
+                                   Margin="0,0,0,12"/>
+                        <WrapPanel Grid.Row="1" Margin="0,0,0,10">
+                            <TextBox x:Name="PackageNameBox" Width="250"
+                                     Text="باقة جديدة" Margin="5"/>
+                            <Button Content="حفظ إعدادات إنشاء الكروت" Width="220" Height="35"
+                                    Margin="5" Click="SavePackage_Click"/>
+                            <Button Content="تحديث قائمة الباقات" Width="165" Height="35"
+                                    Margin="5" Click="ReloadPackages_Click"/>
+                        </WrapPanel>
+                        <DataGrid x:Name="PackagesGrid" Grid.Row="2"
+                                  SelectionChanged="PackagesGrid_SelectionChanged"
+                                  AutoGenerateColumns="False" IsReadOnly="True"
+                                  CanUserAddRows="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="رقم" Binding="{Binding Id}" Width="80"/>
+                                <DataGridTextColumn Header="اسم الباقة" Binding="{Binding Name}" Width="*"/>
+                                <DataGridTextColumn Header="آخر تحديث" Binding="{Binding UpdatedAt}" Width="220"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </TabItem>
+            </TabControl>
+            <Border Grid.Row="2" Background="{StaticResource CreamPanel}"
+                    BorderBrush="{StaticResource SandBorder}" BorderThickness="1"
+                    Margin="0,8,0,0" CornerRadius="5" Padding="9,2">
+                <TextBlock x:Name="WorkspaceStatus" Text="جلسة MikroTik مصادق عليها"
+                           VerticalAlignment="Center"
+                           Foreground="{StaticResource TextMuted}"/>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

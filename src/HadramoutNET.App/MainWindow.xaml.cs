@@ -17,6 +17,11 @@ public partial class MainWindow : Window
     private readonly Stopwatch _licenseClock = Stopwatch.StartNew();
     private readonly SupabaseLicenseClient _supabaseClient = new();
     private readonly CancellationTokenSource _windowCancel = new();
+    private TrialStateManager? _trialStore;
+    private RouterLoginCoordinator? _routerLogin;
+    private WorkspaceWindow? _workspace;
+    private bool _trialOptedIn;
+    private bool _loggingIn;
     private PaidLicenseCoordinator? _paidLicense;
     private bool _licenseBusy;
     private CancellationTokenSource? _probeCancellation;
@@ -28,12 +33,105 @@ public partial class MainWindow : Window
         {
             _paidLicense = new PaidLicenseCoordinator(
                 PaidCodeStore.ForCurrentUser(), _supabaseClient);
+            _trialStore = TrialStateManager.ForCurrentWindowsUser();
+            _routerLogin = new RouterLoginCoordinator(_paidLicense, _trialStore,
+                () => _licenseClock.Elapsed);
+            RefreshTrialStatus();
         }
         catch (Exception)
         {
             LicenseStatusText.Text = "تعذر فتح مخزن الترخيص المحمي؛ تحقق من ملفات المستخدم.";
             ActivateLicenseButton.IsEnabled = false;
             CheckLicenseButton.IsEnabled = false;
+        }
+    }
+
+    private void RefreshTrialStatus()
+    {
+        if (_trialStore is null)
+        {
+            TrialStartButton.IsEnabled = false;
+            TrialStatusText.Text = "تعذر الوصول إلى سجل التجربة المحمي.";
+            return;
+        }
+        TrialAccess trial = _trialStore.Preview(DateTimeOffset.UtcNow);
+        TrialStartButton.IsEnabled = trial.Permitted;
+        TrialStatusText.Text = trial.Message;
+    }
+
+    private void TrialStart_Click(object sender, RoutedEventArgs e)
+    {
+        if (_trialStore is null) return;
+        TrialAccess status = _trialStore.Preview(DateTimeOffset.UtcNow);
+        if (!status.Permitted)
+        {
+            TrialStatusText.Text = status.Message;
+            return;
+        }
+        _trialOptedIn = true;
+        TrialStatusText.Text = "تم اختيار التجربة. يبدأ حساب المدة فقط بعد تسجيل دخول ناجح إلى MikroTik.";
+    }
+
+    private async void RouterLogin_Click(object sender, RoutedEventArgs e)
+    {
+        if (_loggingIn || _routerLogin is null || _paidLicense is null ||
+            _trialStore is null || _workspace is not null) return;
+        _loggingIn = true;
+        RouterLoginButton.IsEnabled = false;
+        var request = new RouterLoginRequest(
+            RouterHostBox.Text, RouterPortBox.Text, RouterUsernameBox.Text,
+            RouterPasswordBox.Password,
+            TrialOptIn: _trialOptedIn,
+            UseSsl: UseSslCheck.IsChecked == true,
+            VerifySsl: VerifySslCheck.IsChecked == true,
+            ConnectionMode: RemoteModeRadio.IsChecked == true ? "remote" : "local");
+        RouterPasswordBox.Clear();
+        RouterProbeStatus.Text = "جارٍ التحقق من الترخيص ومصادقة MikroTik...";
+        try
+        {
+            RouterLoginResult result = await _routerLogin.LoginAsync(
+                request, DateTimeOffset.UtcNow, _windowCancel.Token);
+            if (!IsLoaded) return;
+            if (!result.Success || result.Session is null)
+            {
+                RouterProbeStatus.Text = result.Message;
+                RefreshTrialStatus();
+                return;
+            }
+            RefreshTrialStatus();
+            _workspace = new WorkspaceWindow(result.Session, _paidLicense,
+                _trialStore, _licenseClock);
+            _workspace.Closed += Workspace_Closed;
+            Hide();
+            _workspace.Show();
+        }
+        catch (Exception)
+        {
+            if (IsLoaded)
+                RouterProbeStatus.Text = "تعذر إتمام تسجيل الدخول بصورة آمنة؛ لم تُفتح لوحة الإدارة.";
+        }
+        finally
+        {
+            _loggingIn = false;
+            if (IsLoaded) RouterLoginButton.IsEnabled = true;
+        }
+    }
+
+    private async void Workspace_Closed(object? sender, EventArgs e)
+    {
+        _workspace = null;
+        try
+        {
+            if (_routerLogin is not null) await _routerLogin.LogoutAsync();
+        }
+        catch (Exception) { /* The router transport is closed best-effort. */ }
+        _trialOptedIn = false;
+        TrialStartButton.Content = "اختيار التجربة المجانية — 20 يوما";
+        RefreshTrialStatus();
+        if (IsLoaded && !_windowCancel.IsCancellationRequested)
+        {
+            RouterProbeStatus.Text = "تم تسجيل الخروج من الراوتر، ولم تُحذف بيانات الترخيص.";
+            Show();
         }
     }
 
@@ -125,11 +223,18 @@ public partial class MainWindow : Window
         }
     }
 
-    protected override void OnClosed(EventArgs e)
+    protected override async void OnClosed(EventArgs e)
     {
         _probeCancellation?.Cancel();
         _windowCancel.Cancel();
+        _workspace?.Close();
         _supabaseClient.Dispose();
         base.OnClosed(e);
+        try
+        {
+            if (_routerLogin is not null) await _routerLogin.DisposeAsync();
+        }
+        catch (Exception) { /* Closing must not reveal secrets or keep a socket open. */ }
+        _windowCancel.Dispose();
     }
 }
