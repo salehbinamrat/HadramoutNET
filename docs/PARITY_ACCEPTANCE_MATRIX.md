@@ -65,3 +65,31 @@ and compared at send time. Any later change to service, profile or
 User Manager owner blocks the upload rather than sending an old batch to a
 different destination. This prevents an operator mix-up but does not
 prove actual remote delivery or historical batch identity.
+
+## Original card-template file interchange
+
+The .NET workspace now imports and exports card-only JSON templates.
+`CardTemplateExchange` accepts a bounded UTF-8 file (up to 22 MiB,
+including UTF-8 BOM), reads only `card.*` keys, and validates supported
+fields via `CardArtPresetCodec` before applying a new design. Original
+`create.*` and `print.*` values contained in a mixed JSON export cannot
+silently override the current service, package or printer settings.
+
+A nonempty `card.background_path` is rejected: imported templates must
+carry an embedded validated `card.background_data` PNG. No external,
+UNC or other filesystem image paths are resolved from the JSON. The
+Python original may export embedded JPEG/GIF/BMP/WebP bytes; those
+cannot yet be imported directly into the strict PNG .NET core and
+must first be converted in the existing WPF image import editor.
+
+Known font size, color, border and layer-position fields are applied
+to the shared WPF/PDF artwork. Unknown original `card.*` settings
+are preserved for export and in the package record but are explicitly
+reported as unrendered. They are not silently treated as supported.
+Templates contain artwork and settings only: no generated voucher
+credentials are included. Exports use the existing atomic file writer,
+not the original Python installation or database.
+
+Pending: fully implement original per-layer color and size overrides,
+all original font families and image formats, image-crop calibration
+against physical printouts, and user-approved installation acceptance.
