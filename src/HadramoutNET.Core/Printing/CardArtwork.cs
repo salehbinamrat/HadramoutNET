@@ -80,8 +80,8 @@ public static class CardArtwork
         if (!double.IsFinite(options.QrSizeMm) || options.QrSizeMm is < 1 or > 300)
             throw new PrintLayoutException("حجم QR غير صالح.");
 
-        var positions = new Dictionary<string, CardArtPoint>(OriginalPositions,
-            StringComparer.Ordinal);
+        var positions = OriginalPositions.ToDictionary(
+            item => item.Key, item => item.Value, StringComparer.Ordinal);
         if (options.Positions is not null)
             foreach (var (key, point) in options.Positions)
             {
