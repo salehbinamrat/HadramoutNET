@@ -131,11 +131,24 @@ public static class CardArtwork
         Add("username", card.Username, true, bigPt, "#17110B", required: true);
         Add("password", card.Password, card.Password.Length != 0, bigPt, "#17110B",
             required: true);
-        Add("price", options.Price, options.ShowPrice, bigPt, "#7D0F24");
-        Add("capacity", options.Capacity, options.ShowCapacity, basePt, "#7D0F24");
-        Add("duration", options.Duration, options.ShowDuration, basePt, "#7D0F24");
-        Add("validity", options.Validity, options.ShowValidity, basePt, "#7D0F24");
-        Add("date", options.Date, options.ShowDate, smallPt, "#7D0F24");
+        // Python render.py uses the individual card's price, bytes,
+        // uptime, validity and generation date. An explicitly edited label
+        // takes precedence only when the operator supplied one.
+        string price = string.IsNullOrEmpty(options.Price) ?
+            card.Price.ToString("G29", CultureInfo.InvariantCulture) : options.Price;
+        string capacity = string.IsNullOrEmpty(options.Capacity) ?
+            VoucherCardMetadata.ReadableBytes(card.LimitBytes) : options.Capacity;
+        string duration = string.IsNullOrEmpty(options.Duration) ?
+            card.LimitUptime : options.Duration;
+        string validity = string.IsNullOrEmpty(options.Validity) ?
+            card.ValidityDays.ToString(CultureInfo.InvariantCulture) + " يوم" : options.Validity;
+        string date = string.IsNullOrEmpty(options.Date) ?
+            (card.CreatedAt ?? "").Split('T', ' ')[0] : options.Date;
+        Add("price", price, options.ShowPrice, bigPt, "#7D0F24");
+        Add("capacity", capacity, options.ShowCapacity, basePt, "#7D0F24");
+        Add("duration", duration, options.ShowDuration, basePt, "#7D0F24");
+        Add("validity", validity, options.ShowValidity, basePt, "#7D0F24");
+        Add("date", date, options.ShowDate, smallPt, "#7D0F24");
         Add("phone", options.Phone, options.ShowPhone, smallPt, "#7D0F24");
         Add("other", options.Other, options.ShowOther, smallPt, "#7D0F24");
         Add("other2", options.Other2, options.ShowOther2, smallPt, "#7D0F24");
