@@ -1,5 +1,6 @@
 using System.Threading;
 using System.Diagnostics;
+using System.Globalization;
 using HadramoutNET.Core.Licensing;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,9 +9,8 @@ using HadramoutNET.Core.RouterOS;
 namespace HadramoutNET.App;
 
 /// <summary>
-/// Login UI foundation. Only the read-only MikroTik connection test is wired.
-/// Successful /login + identity is NOT a trial start, paid grant, or access to
-/// application management screens; full login remains deliberately disabled.
+/// Protected router login: signed paid license or original opt-in 480-hour trial.
+/// A read-only probe never grants access or starts a free trial.
 /// </summary>
 public partial class MainWindow : Window
 {
@@ -26,11 +26,23 @@ public partial class MainWindow : Window
     private PaidLicenseCoordinator? _paidLicense;
     private bool _licenseBusy;
     private CancellationTokenSource? _probeCancellation;
+    private bool _renewalOpen;
+    private RouterConnectionHistoryStore? _history;
+    private bool _loadingHistory;
+    private bool _changingMode;
+    private string _mode = "local";
+    private readonly Dictionary<string, (string Host, string Port, bool Ssl, bool Verify)> _drafts = new()
+    {
+        ["local"] = ("192.168.88.1", "8728", false, true),
+        ["remote"] = ("", "", false, true)
+    };
 
     public MainWindow()
     {
         InitializeComponent();
         SourceInitialized += (_, _) => WindowWorkArea.Fit(this);
+        RefreshMode();
+        Loaded += LoginWindow_Loaded;
         try
         {
             _paidLicense = new PaidLicenseCoordinator(
@@ -39,12 +51,24 @@ public partial class MainWindow : Window
             _routerLogin = new RouterLoginCoordinator(_paidLicense, _trialStore,
                 () => _licenseClock.Elapsed);
             RefreshTrialStatus();
+            UpdateLicenseControls(_paidLicense.StatusAt(_licenseClock.Elapsed));
         }
         catch (Exception)
         {
             LicenseStatusText.Text = "تعذر فتح مخزن الترخيص المحمي؛ تحقق من ملفات المستخدم.";
             ActivateLicenseButton.IsEnabled = false;
             CheckLicenseButton.IsEnabled = false;
+            LicenseDetailsButton.IsEnabled = false;
+            RenewLicenseButton.IsEnabled = false;
+        }
+        try
+        {
+            _history = RouterConnectionHistoryStore.ForCurrentUser();
+            ReloadHistory();
+        }
+        catch (Exception)
+        {
+            RouterProbeStatus.Text = "تعذر فتح محفوظات الاتصالات المحمية؛ يمكنك الدخول يدويا.";
         }
     }
 
@@ -69,6 +93,8 @@ public partial class MainWindow : Window
         TrialAccess trial = _trialStore.Preview(DateTimeOffset.UtcNow);
         TrialStartButton.IsEnabled = trial.Permitted;
         TrialStatusText.Text = trial.Message;
+        TrialStartButton.Content = _trialOptedIn ? "✓ التجربة محددة — اضغط تسجيل الدخول" :
+            trial.Mode == "trial" ? "متابعة التجربة المجانية" : "اختيار التجربة المجانية — 20 يوما";
     }
 
     private void TrialStart_Click(object sender, RoutedEventArgs e)
@@ -81,6 +107,7 @@ public partial class MainWindow : Window
             return;
         }
         _trialOptedIn = true;
+        RefreshTrialStatus();
         TrialStatusText.Text = "تم اختيار التجربة. يبدأ حساب المدة فقط بعد تسجيل دخول ناجح إلى MikroTik.";
     }
 
@@ -90,15 +117,18 @@ public partial class MainWindow : Window
             _trialStore is null || _workspace is not null) return;
         _loggingIn = true;
         RouterLoginButton.IsEnabled = false;
+        string enteredPassword = ReadRouterPassword();
+        bool remember = SaveLoginCheck.IsChecked == true;
+        bool savePassword = remember && SavePasswordCheck.IsChecked == true;
         var request = new RouterLoginRequest(
             RouterHostBox.Text, RouterPortBox.Text, RouterUsernameBox.Text,
-            AsciiNumerals.PasswordForRouter(RouterPasswordBox.Password,
+            AsciiNumerals.PasswordForRouter(enteredPassword,
                 NormalizePasswordDigitsCheck.IsChecked == true),
             TrialOptIn: _trialOptedIn,
             UseSsl: UseSslCheck.IsChecked == true,
             VerifySsl: VerifySslCheck.IsChecked == true,
             ConnectionMode: RemoteModeRadio.IsChecked == true ? "remote" : "local");
-        RouterPasswordBox.Clear();
+        ClearRouterPassword();
         RouterProbeStatus.Text = "جارٍ التحقق من الترخيص ومصادقة MikroTik...";
         try
         {
@@ -112,6 +142,7 @@ public partial class MainWindow : Window
                 return;
             }
             RefreshTrialStatus();
+            if (remember) RememberConnection(request, savePassword);
             _workspace = new WorkspaceWindow(result.Session, _paidLicense,
                 _trialStore, _licenseClock);
             _workspace.Closed += Workspace_Closed;
@@ -141,6 +172,7 @@ public partial class MainWindow : Window
         _trialOptedIn = false;
         TrialStartButton.Content = "اختيار التجربة المجانية — 20 يوما";
         RefreshTrialStatus();
+        if (_paidLicense is not null) UpdateLicenseControls(_paidLicense.StatusAt(_licenseClock.Elapsed));
         if (IsLoaded && !_windowCancel.IsCancellationRequested)
         {
             RouterProbeStatus.Text = "تم تسجيل الخروج من الراوتر، ولم تُحذف بيانات الترخيص.";
@@ -155,7 +187,7 @@ public partial class MainWindow : Window
             RouterHostBox.Text,
             RouterPortBox.Text,
             RouterUsernameBox.Text,
-            AsciiNumerals.PasswordForRouter(RouterPasswordBox.Password,
+            AsciiNumerals.PasswordForRouter(ReadRouterPassword(),
                 NormalizePasswordDigitsCheck.IsChecked == true),
             UseSsl: UseSslCheck.IsChecked == true,
             VerifySsl: VerifySslCheck.IsChecked == true,
@@ -163,7 +195,7 @@ public partial class MainWindow : Window
 
         // The password is only used for this explicit connection attempt.
         // Do not save or log it; the original trial mirrors stay untouched.
-        RouterPasswordBox.Clear();
+        ClearRouterPassword();
         var cancellation = new CancellationTokenSource();
         _probeCancellation = cancellation;
         RouterProbeButton.IsEnabled = false;
@@ -217,9 +249,11 @@ public partial class MainWindow : Window
                 : await _paidLicense.CheckStoredAsync(
                     DateTimeOffset.UtcNow, _licenseClock.Elapsed, _windowCancel.Token);
             if (!IsLoaded) return;
-            LicenseStatusText.Text = result.Permitted
-                ? "الترخيص المدفوع صالح بالتوقيع الرقمي؛ الدخول الكامل لم يُفعّل بعد."
-                : result.Message;
+            LicenseStatusText.Text = result.Message;
+            if (result.Permitted) _trialOptedIn = false;
+            _renewalOpen = false;
+            UpdateLicenseControls(result);
+            RefreshTrialStatus();
         }
         catch (Exception)
         {
@@ -233,7 +267,235 @@ public partial class MainWindow : Window
             {
                 ActivateLicenseButton.IsEnabled = true;
                 CheckLicenseButton.IsEnabled = true;
+                if (_paidLicense is not null) UpdateLicenseControls(_paidLicense.StatusAt(_licenseClock.Elapsed));
             }
+        }
+    }
+
+
+    private async void LoginWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (_paidLicense is null) return;
+        try
+        {
+            if (_paidLicense.NeedsCheck(_licenseClock.Elapsed))
+                await VerifyLicenseAsync(activate: false);
+        }
+        catch (Exception)
+        {
+            if (IsLoaded) LicenseStatusText.Text = "تعذر فحص الترخيص المحفوظ؛ أعد المحاولة يدويا.";
+        }
+    }
+
+    private void UpdateLicenseControls(LicenseAccess access)
+    {
+        bool verified = access.Permitted && access.Reason == "online_valid";
+        LicenseActivationPanel.Visibility = !verified || _renewalOpen ? Visibility.Visible : Visibility.Collapsed;
+        RenewLicenseButton.Visibility = verified && !_renewalOpen ? Visibility.Visible : Visibility.Collapsed;
+        TrialStartButton.Visibility = verified ? Visibility.Collapsed : Visibility.Visible;
+        TrialStatusText.Visibility = verified ? Visibility.Collapsed : Visibility.Visible;
+        TrialExplanation.Visibility = verified ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void RenewLicense_Click(object sender, RoutedEventArgs e)
+    {
+        if (_licenseBusy || _paidLicense is null) return;
+        _renewalOpen = true;
+        LicenseCodeBox.Clear();
+        UpdateLicenseControls(_paidLicense.StatusAt(_licenseClock.Elapsed));
+        LicenseStatusText.Text = "أدخل رمز التجديد؛ لن يُقبل إلا بعد التحقق الموقّع.";
+        LicenseCodeBox.Focus();
+    }
+
+    private void LicenseDetails_Click(object sender, RoutedEventArgs e)
+    {
+        LicenseAccess? paid = _paidLicense?.StatusAt(_licenseClock.Elapsed);
+        TrialAccess? trial = _trialStore?.Preview(DateTimeOffset.UtcNow);
+        string device;
+        try { device = WindowsLicenseIdentity.ReadCurrent().PaidDeviceCode; }
+        catch (Exception) { device = "غير متاح"; }
+        string message = "الترخيص: " + (paid?.Message ?? "غير متاح")
+            + "\nرقم الجهاز: " + device
+            + "\nرمز الترخيص: " + (string.IsNullOrWhiteSpace(paid?.LicenseId) ? "غير مفعّل" : paid.LicenseId)
+            + "\nتاريخ الانتهاء: " + (string.IsNullOrWhiteSpace(paid?.Expires) ? "غير محدد" : paid.Expires)
+            + "\nالتجربة: " + (trial?.Message ?? "غير متاحة")
+            + "\nمدة التجربة الأصلية: 20 يوما (480 ساعة).";
+        MessageBox.Show(this, message, "تفاصيل الترخيص", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private string ReadRouterPassword() =>
+        ShowRouterPasswordCheck.IsChecked == true ? RouterPasswordVisible.Text : RouterPasswordBox.Password;
+
+    private void ClearRouterPassword()
+    {
+        RouterPasswordBox.Clear();
+        RouterPasswordVisible.Clear();
+    }
+
+    private void ShowRouterPassword_Checked(object sender, RoutedEventArgs e)
+    {
+        if (RouterPasswordBox is null || RouterPasswordVisible is null) return;
+        RouterPasswordVisible.Text = RouterPasswordBox.Password;
+        RouterPasswordBox.Clear();
+        RouterPasswordBox.Visibility = Visibility.Collapsed;
+        RouterPasswordVisible.Visibility = Visibility.Visible;
+        RouterPasswordVisible.Focus();
+        RouterPasswordVisible.CaretIndex = RouterPasswordVisible.Text.Length;
+    }
+
+    private void ShowRouterPassword_Unchecked(object sender, RoutedEventArgs e)
+    {
+        if (RouterPasswordBox is null || RouterPasswordVisible is null) return;
+        RouterPasswordBox.Password = RouterPasswordVisible.Text;
+        RouterPasswordVisible.Clear();
+        RouterPasswordVisible.Visibility = Visibility.Collapsed;
+        RouterPasswordBox.Visibility = Visibility.Visible;
+        RouterPasswordBox.Focus();
+    }
+
+    private void SaveLogin_Changed(object sender, RoutedEventArgs e)
+    {
+        if (SaveLoginCheck is null || SavePasswordCheck is null) return;
+        SavePasswordCheck.IsEnabled = SaveLoginCheck.IsChecked == true;
+        if (SaveLoginCheck.IsChecked != true) SavePasswordCheck.IsChecked = false;
+    }
+
+    private void ReloadHistory()
+    {
+        if (_history is null || SavedConnectionsCombo is null) return;
+        _loadingHistory = true;
+        try
+        {
+            SavedConnectionsCombo.ItemsSource = _history.Read();
+            SavedConnectionsCombo.SelectedIndex = -1;
+        }
+        finally { _loadingHistory = false; }
+    }
+
+    private void SavedConnection_Selected(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loadingHistory ||
+            SavedConnectionsCombo.SelectedItem is not RouterConnectionProfile item) return;
+        if (item.RemoteMode) RemoteModeRadio.IsChecked = true;
+        else LocalModeRadio.IsChecked = true;
+        RouterHostBox.Text = item.Host;
+        RouterPortBox.Text = item.Port.ToString(CultureInfo.InvariantCulture);
+        RouterUsernameBox.Text = item.Username;
+        UseSslCheck.IsChecked = item.UseSsl;
+        VerifySslCheck.IsChecked = item.VerifySsl;
+        ShowRouterPasswordCheck.IsChecked = false;
+        ClearRouterPassword();
+        RouterPasswordBox.Password = item.Password;
+        SaveLoginCheck.IsChecked = true;
+        SavePasswordCheck.IsChecked = item.Password.Length > 0;
+        RouterProbeStatus.Text = "تم استرجاع اتصال محفوظ؛ راجع البيانات ثم سجل الدخول.";
+    }
+
+    private void DeleteSavedConnection_Click(object sender, RoutedEventArgs e)
+    {
+        if (_history is null ||
+            SavedConnectionsCombo.SelectedItem is not RouterConnectionProfile item) return;
+        if (MessageBox.Show(this, "هل تريد حذف الاتصال من المحفوظات المحلية؟",
+            "حذف اتصال", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            return;
+        try
+        {
+            _history.Delete(item.Key);
+            ReloadHistory();
+            ClearRouterPassword();
+            SaveLoginCheck.IsChecked = false;
+            RouterProbeStatus.Text = "حُذف الاتصال المحفوظ من هذا الكمبيوتر فقط.";
+        }
+        catch (Exception)
+        {
+            RouterProbeStatus.Text = "تعذر حذف الاتصال من المحفوظات المحمية.";
+        }
+    }
+
+    private void RememberConnection(RouterLoginRequest request, bool rememberPassword)
+    {
+        if (_history is null) return;
+        try
+        {
+            RouterEndpoint endpoint = RouterAddress.Normalize(request.Host, request.ApiPort, request.ConnectionMode);
+            _history.Upsert(new RouterConnectionProfile(endpoint.Host, endpoint.Port,
+                request.Username.Trim(), request.UseSsl, request.VerifySsl,
+                request.ConnectionMode == "remote", request.Password), rememberPassword);
+            ReloadHistory();
+        }
+        catch (Exception)
+        {
+            RouterProbeStatus.Text = "تم الدخول، لكن تعذر حفظ الاتصال في Windows.";
+        }
+    }
+
+    private void ConnectionMode_Checked(object sender, RoutedEventArgs e)
+    {
+        if (RouterHostBox is null || RouterPortBox is null || HostCaption is null ||
+            PortCaption is null || RemoteModeRadio is null) return;
+        RefreshMode();
+    }
+
+    private void RefreshMode()
+    {
+        if (RouterHostBox is null || RouterPortBox is null || RemoteModeRadio is null ||
+            HostCaption is null || PortCaption is null || _changingMode) return;
+        string target = RemoteModeRadio.IsChecked == true ? "remote" : "local";
+        if (target != _mode)
+        {
+            _drafts[_mode] = (RouterHostBox.Text, RouterPortBox.Text,
+                UseSslCheck.IsChecked == true, VerifySslCheck.IsChecked == true);
+            var draft = _drafts[target];
+            _changingMode = true;
+            try
+            {
+                RouterHostBox.Text = draft.Host;
+                RouterPortBox.Text = draft.Port;
+                UseSslCheck.IsChecked = draft.Ssl;
+                VerifySslCheck.IsChecked = draft.Verify;
+            }
+            finally { _changingMode = false; }
+            _mode = target;
+        }
+        HostCaption.Text = target == "remote" ? "رابط الاتصال :" : "عنوان الراوتر :";
+        PortCaption.Text = target == "remote" ? "API خارجي :" : "API :";
+        ConnectionHint.Visibility = target == "remote" ? Visibility.Visible : Visibility.Collapsed;
+        VerifySslCheck.IsEnabled = UseSslCheck.IsChecked == true;
+    }
+
+    private void UseSsl_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_changingMode || RouterPortBox is null || UseSslCheck is null ||
+            VerifySslCheck is null || RemoteModeRadio is null) return;
+        if (RemoteModeRadio.IsChecked != true &&
+            (RouterPortBox.Text.Trim() is "8728" or "8729"))
+            RouterPortBox.Text = UseSslCheck.IsChecked == true ? "8729" : "8728";
+        VerifySslCheck.IsEnabled = UseSslCheck.IsChecked == true;
+    }
+
+    private void FocusLogin_Click(object sender, RoutedEventArgs e) => RouterHostBox.Focus();
+
+    private void About_Click(object sender, RoutedEventArgs e) =>
+        MessageBox.Show(this, "حضرموت لإدارة الشبكات وطباعة الكروت — .NET 10\n"
+            + "دخول MikroTik، الهوتسبوت، اليوزرمنجر، البرودباند وإنشاء وطباعة الكروت.\n"
+            + "التجربة المجانية الأصلية 20 يوما.",
+            "حول البرنامج", MessageBoxButton.OK, MessageBoxImage.Information);
+
+    private void Support_Click(object sender, RoutedEventArgs e)
+    {
+        if (MessageBox.Show(this,
+            "برمجة وتطوير: صالح بن عمرات\nرقم التواصل: 774660770\nتيليجرام: t.me/Salehbinzain\n"
+            + "هل تريد فتح تيليجرام؟",
+            "خدمة العملاء", MessageBoxButton.YesNo, MessageBoxImage.Question)
+            != MessageBoxResult.Yes) return;
+        try
+        {
+            Process.Start(new ProcessStartInfo("https://t.me/Salehbinzain")
+                { UseShellExecute = true });
+        }
+        catch (Exception)
+        {
+            MessageBox.Show(this, "تعذر فتح الرابط؛ افتح t.me/Salehbinzain يدويا.");
         }
     }
 
