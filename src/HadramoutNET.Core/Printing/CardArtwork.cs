@@ -30,7 +30,9 @@ public sealed record CardArtOptions(
     string QrMode = "credentials",
     string QrLoginUrl = "http://hotspot.local/login",
     double QrSizeMm = 6.0,
-    IReadOnlyDictionary<string, CardArtPoint>? Positions = null);
+    IReadOnlyDictionary<string, CardArtPoint>? Positions = null,
+    string? BackgroundData = null,
+    string BackgroundMode = "stretch");
 
 public sealed record CardArtText(
     string Key, string Value, double X, double Y, double Width,
