@@ -306,14 +306,14 @@ public sealed class VoucherDeliveryJournal
         command.Parameters.AddWithValue("$identity", routerIdentity);
         command.Parameters.AddWithValue("$endpoint", routerEndpoint);
         command.Parameters.AddWithValue("$count", total);
-        command.Parameters.AddWithValue("$time",
-            DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+        string observedUtc = DateTimeOffset.UtcNow.ToString("O",
+            CultureInfo.InvariantCulture);
+        command.Parameters.AddWithValue("$time", observedUtc);
         command.Parameters.AddWithValue("$version", version);
         command.Parameters.AddWithValue("$summary", payload);
         if (command.ExecuteNonQuery() != 1)
             throw new InvalidOperationException(
                 "محاولة الرفع لا تتطابق مع الراوتر أو العدد أو ليست غير محسومة.");
-        string observedUtc = (string)command.Parameters["$time"].Value;
         command.Parameters.Clear();
         command.CommandText = "SELECT last_insert_rowid()";
         long id = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
