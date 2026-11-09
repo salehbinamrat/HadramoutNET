@@ -58,7 +58,7 @@ internal static class CardArtworkEditorWindow
             panel.Children.Add(input);
             return input;
         }
-        static CheckBox Toggle(StackPanel panel, string label, bool value)
+        static CheckBox Toggle(Panel panel, string label, bool value)
         {
             var c = new CheckBox
             {
