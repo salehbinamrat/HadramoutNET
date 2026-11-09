@@ -681,18 +681,17 @@ public partial class WorkspaceWindow : Window
         Close();
     }
 
+    private void TechnicalNumericInput_TextChanged(object sender, TextChangedEventArgs e) =>
+        TechnicalTextInput.NormalizeTextBox(sender, e);
+
     private CardGenerationOptions CurrentGenerationOptions()
     {
-        if (!int.TryParse(QtyBox.Text, NumberStyles.None,
-                CultureInfo.InvariantCulture, out int quantity) ||
-            !int.TryParse(CardLengthBox.Text, NumberStyles.None,
-                CultureInfo.InvariantCulture, out int codeLength) ||
-            !int.TryParse(PasswordLengthBox.Text, NumberStyles.None,
-                CultureInfo.InvariantCulture, out int passwordLength) ||
-            !int.TryParse(StartSequenceBox.Text, NumberStyles.None,
-                CultureInfo.InvariantCulture, out int startSequence))
+        if (!TechnicalNumberParser.TryUnsignedInt(QtyBox.Text, out int quantity) ||
+            !TechnicalNumberParser.TryUnsignedInt(CardLengthBox.Text, out int codeLength) ||
+            !TechnicalNumberParser.TryUnsignedInt(PasswordLengthBox.Text, out int passwordLength) ||
+            !TechnicalNumberParser.TryUnsignedInt(StartSequenceBox.Text, out int startSequence))
             throw new CardGenerationException(
-                "أدخل أعدادا إنجليزية صحيحة للكمية والأطوال وبداية الترقيم.");
+                "أدخل أعدادا صحيحة للكمية والأطوال وبداية الترقيم.");
 
         var options = new CardGenerationOptions(
             Quantity: quantity,
@@ -711,20 +710,13 @@ public partial class WorkspaceWindow : Window
 
     private VoucherCardMetadataOptions CurrentCardMetadataOptions()
     {
-        if (!decimal.TryParse(CardPriceBox.Text.Trim(),
-                NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture,
-                out decimal price) ||
-            !decimal.TryParse(CardCapacityBox.Text.Trim(),
-                NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture,
-                out decimal capacity) ||
-            !int.TryParse(CardHoursBox.Text.Trim(),
-                NumberStyles.None, CultureInfo.InvariantCulture, out int hours) ||
-            !int.TryParse(CardMinutesBox.Text.Trim(),
-                NumberStyles.None, CultureInfo.InvariantCulture, out int minutes) ||
-            !int.TryParse(CardValidityBox.Text.Trim(),
-                NumberStyles.None, CultureInfo.InvariantCulture, out int validity))
+        if (!TechnicalNumberParser.TryDecimal(CardPriceBox.Text, out decimal price) ||
+            !TechnicalNumberParser.TryDecimal(CardCapacityBox.Text, out decimal capacity) ||
+            !TechnicalNumberParser.TryUnsignedInt(CardHoursBox.Text, out int hours) ||
+            !TechnicalNumberParser.TryUnsignedInt(CardMinutesBox.Text, out int minutes) ||
+            !TechnicalNumberParser.TryUnsignedInt(CardValidityBox.Text, out int validity))
             throw new CardGenerationException(
-                "السعر والسعة والمدة والصلاحية يجب أن تكون قيما إنجليزية صحيحة.");
+                "السعر والسعة والمدة والصلاحية يجب أن تكون قيما رقمية صحيحة.");
 
         var options = new VoucherCardMetadataOptions(
             Price: price, Capacity: capacity,
