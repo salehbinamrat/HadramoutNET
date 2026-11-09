@@ -16,7 +16,7 @@ application has been ported. Statuses are evidence-scoped.
 | User Manager 6/7 | Version-specific provisioning, profile binding, per-command write-ahead intent + ACK, manual unresolved review | Real v6/v7 profile accounting and RADIUS end-to-end |
 | Delivery audit | Separate SQLite journal and append-only aggregate observations, no stored passwords/usernames | Provenance of each individual remote card after crashes (policy and implementation) |
 | Print sheet geometry | A3/A4, portrait/landscape, five orders, long/short-edge duplex, per-package persisted print settings | Printer hardware driver and physical cut/duplex calibration |
-| Card artwork | One shared physical scene for WPF preview, native and PDF; saved positions, optional text, credential overlap rejection, QR and red theme | Visual/pixel parity with the original Python raster layer editor, full font/shaping metrics and dynamic data |
+| Card artwork | One shared physical scene for WPF preview, native and PDF; saved positions, optional text, credential overlap rejection, QR and red theme; dynamic price, binary capacity, uptime, validity and creation date per voucher | Visual/pixel parity with original Python raster layer editor, font/shaping metrics, and printed dynamic-field acceptance |
 | Card backgrounds | Embedded normalized PNG from Windows import, max 15 MB / 32 million pixels, modes stretch/fill/fit/tile in WPF/PDF | Physical output comparison, WebP availability depends on installed Windows image codec, border and crop parity |
 | PDF | PDFsharp output, atomic write, same card-scene placements and printed data as native | Independent searchable/selection copy-paste verification for Arabic and complex scripts |
 | Native printing | Single explicit Windows print job, ticket/capabilities checks, first-sheet preview uses same WPF renderer | Real printer, duplex and spool failure acceptance |
@@ -39,3 +39,29 @@ application has been ported. Statuses are evidence-scoped.
 - A successful GitHub Actions matrix is **not** an account-authentication
   test with MikroTik or a printed-sheet inspection. Keep the PR Draft until
   the attached `QA_RELEASE_ACCEPTANCE.md` checklist is signed off.
+
+## Subsequent batch creation and real card metadata parity
+
+The WPF creation form now exposes the Python-supported username prefix,
+separate password length/character set, start sequence, sequence format
+and basic price/volume/time/validity fields. Those settings are saved under
+the original `create.*` keys, with compatibility for older `.NET`
+`create.characters` / `create.format` package values. Saved values are
+fully validated BEFORE any controls are changed. The original Python
+database remains untouched.
+
+Generated card objects carry `price`, `limit_bytes`, `limit_uptime`,
+`validity_days`, and `created_at`. The shared card-art scene uses these
+individual card values for the corresponding enabled design layers, unless
+a user explicitly overrides the display text. Capacity units use binary
+1024 scaling, and uptime minutes are normalized. These fields are
+**print metadata** and do NOT silently alter the MikroTik server profile,
+RADIUS usage counters or live account restrictions. The router's actual
+policy still depends on the selected RouterOS service/profile and must
+be verified on real devices.
+
+The upload target is now captured at the instant a local batch is generated
+and compared at send time. Any later change to service, profile or
+User Manager owner blocks the upload rather than sending an old batch to a
+different destination. This prevents an operator mix-up but does not
+prove actual remote delivery or historical batch identity.
