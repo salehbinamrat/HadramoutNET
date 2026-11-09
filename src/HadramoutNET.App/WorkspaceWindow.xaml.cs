@@ -28,6 +28,7 @@ public partial class WorkspaceWindow : Window
     private readonly Stopwatch _uptime;
     private readonly RouterDashboardReader _dashboard = new();
     private readonly RouterAccountDirectory _directory = new();
+    private readonly RouterNetworkInventory _networkInventory = new();
     private readonly DispatcherTimer _heartbeat = new();
     private readonly CancellationTokenSource _cancel = new();
     private IReadOnlyList<Voucher> _generated = [];
@@ -42,6 +43,10 @@ public partial class WorkspaceWindow : Window
     private bool _checking;
     private bool _refreshing;
     private bool _readingPpp;
+    private bool _readingNetworkServers;
+    private bool _readingNetworkNeighbors;
+    private bool _readingNetworkSessions;
+    private IReadOnlyList<NetworkNeighbor> _neighbors = [];
     private bool _legacyBusy;
     private bool _legacyReading;
     private string? _legacySource;
@@ -96,6 +101,12 @@ public partial class WorkspaceWindow : Window
     {
         Pages.SelectedIndex = 6;
         _ = LoadLegacyHistoryAsync();
+    }
+
+    private void ShowNetwork_Click(object sender, RoutedEventArgs e)
+    {
+        Pages.SelectedIndex = 7;
+        _ = LoadNetworkServersAsync();
     }
     private void RefreshUserManager_Click(object sender, RoutedEventArgs e) =>
         _ = LoadUserManagerAsync();
@@ -730,6 +741,149 @@ public partial class WorkspaceWindow : Window
             if (IsLoaded) LegacyPageText.Text = "تعذر فتح أرشيف .NET؛ لم يُعدَّل أي ملف.";
         }
         finally { _legacyReading = false; }
+    }
+
+
+    private void RefreshServers_Click(object sender, RoutedEventArgs e) =>
+        _ = LoadNetworkServersAsync();
+
+    private void RefreshNeighbors_Click(object sender, RoutedEventArgs e) =>
+        _ = LoadNetworkNeighborsAsync();
+
+    private void RefreshSessions_Click(object sender, RoutedEventArgs e) =>
+        _ = LoadNetworkSessionsAsync();
+
+    private async Task LoadNetworkServersAsync()
+    {
+        if (_readingNetworkServers || !IsLoaded || !ConfirmCurrentAccess()) return;
+        _readingNetworkServers = true;
+        ServersNotice.Text = "جارٍ قراءة سيرفرات Hotspot...";
+        try
+        {
+            var result = await _networkInventory.ReadServersAsync(_session, _cancel.Token);
+            if (!IsLoaded) return;
+            ServersGrid.ItemsSource = result.Available ? result.Items : null;
+            ServersNotice.Text = result.Available
+                ? "تمت قراءة " + result.Items.Count + " سيرفر Hotspot — عرض فقط."
+                : "خدمة السيرفرات غير متاحة أو لا تتوفر صلاحية القراءة.";
+        }
+        catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
+        catch (InvalidOperationException)
+        {
+            if (IsLoaded) LockWorkspace();
+        }
+        catch (Exception)
+        {
+            if (IsLoaded)
+            {
+                ServersGrid.ItemsSource = null;
+                ServersNotice.Text = "تعذرت قراءة السيرفرات؛ لم تُغيّر أي إعدادات.";
+            }
+        }
+        finally { _readingNetworkServers = false; }
+    }
+
+    private async Task LoadNetworkNeighborsAsync()
+    {
+        if (_readingNetworkNeighbors || !IsLoaded || !ConfirmCurrentAccess()) return;
+        _readingNetworkNeighbors = true;
+        NeighborsNotice.Text = "جارٍ قراءة جدول اكتشاف الأجهزة من MikroTik دون مسح للشبكة...";
+        try
+        {
+            var result = await _networkInventory.ReadNeighborsAsync(_session, _cancel.Token);
+            if (!IsLoaded) return;
+            _neighbors = result.Available ? result.Items : [];
+            FilterNetworkNeighbors();
+            NeighborsNotice.Text = result.Available
+                ? "تم اكتشاف " + result.Items.Count + " جهاز — بيانات للقراءة فقط."
+                : result.Reason == "limit_exceeded"
+                    ? "تجاوز عدد الأجهزة حد القراءة الآمن (5000)؛ لم تُجلب القائمة."
+                    : "تعذر حساب عدد الأجهزة أو قراءة القائمة؛ لا تتوفر بيانات مؤكدة.";
+        }
+        catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
+        catch (InvalidOperationException)
+        {
+            if (IsLoaded) LockWorkspace();
+        }
+        catch (Exception)
+        {
+            if (IsLoaded)
+            {
+                _neighbors = [];
+                NeighborsGrid.ItemsSource = null;
+                NeighborsNotice.Text = "تعذرت قراءة جدول الأجهزة؛ لم يُنفذ أي مسح أو تعديل.";
+            }
+        }
+        finally { _readingNetworkNeighbors = false; }
+    }
+
+    private void NeighborSearch_Changed(object sender, TextChangedEventArgs e) =>
+        FilterNetworkNeighbors();
+
+    private void FilterNetworkNeighbors()
+    {
+        if (NeighborsGrid is null || NeighborSearchBox is null) return;
+        string filter = NeighborSearchBox.Text.Trim();
+        NeighborsGrid.ItemsSource = filter.Length == 0
+            ? _neighbors
+            : _neighbors.Where(row =>
+                row.Interface.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                row.Address.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                row.Mac.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                row.Identity.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                row.Platform.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                row.Version.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToArray();
+    }
+
+    private void CopyNeighbor_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmCurrentAccess()) return;
+        if (NeighborsGrid.SelectedItem is not NetworkNeighbor selected)
+        {
+            NeighborsNotice.Text = "اختر جهازا لنسخ عنوانه.";
+            return;
+        }
+        try
+        {
+            Clipboard.SetText("IP: " + selected.Address + " | MAC: " + selected.Mac);
+            NeighborsNotice.Text = "تم نسخ عنوان الجهاز المحدد إلى الحافظة.";
+        }
+        catch (Exception)
+        {
+            NeighborsNotice.Text = "تعذر النسخ إلى الحافظة، دون تغيير بيانات الراوتر.";
+        }
+    }
+
+    private async Task LoadNetworkSessionsAsync()
+    {
+        if (_readingNetworkSessions || !IsLoaded || !ConfirmCurrentAccess()) return;
+        _readingNetworkSessions = true;
+        SessionsNotice.Text = "جارٍ فحص أعداد جلسات Hotspot وPPPoE قبل القراءة...";
+        try
+        {
+            var result = await _networkInventory.ReadSessionsAsync(_session, _cancel.Token);
+            if (!IsLoaded) return;
+            SessionsGrid.ItemsSource = result.Available ? result.Items : null;
+            SessionsNotice.Text = result.Available
+                ? "تمت قراءة " + result.Items.Count + " جلسة نشطة — دون فصل."
+                : result.Reason == "limit_exceeded"
+                    ? "تجاوزت إحدى الخدمتين حد 2500 جلسة؛ أُلغيت قراءة القائمة."
+                    : "بيانات الجلسات غير متاحة أو صلاحيات القراءة غير كافية؛ لا يُعرض صفر زائف.";
+        }
+        catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
+        catch (InvalidOperationException)
+        {
+            if (IsLoaded) LockWorkspace();
+        }
+        catch (Exception)
+        {
+            if (IsLoaded)
+            {
+                SessionsGrid.ItemsSource = null;
+                SessionsNotice.Text = "تعذرت قراءة الجلسات؛ لم تُفصل أي جلسة.";
+            }
+        }
+        finally { _readingNetworkSessions = false; }
     }
 
     private bool ConfirmCurrentAccess()
