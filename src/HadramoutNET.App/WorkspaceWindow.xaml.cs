@@ -1143,28 +1143,18 @@ public partial class WorkspaceWindow : Window
     {
         if (_generated.Count == 0)
             throw new InvalidOperationException("أنشئ مسودة كروت قبل التصدير.");
+        if (_draftTarget is null ||
+            !_draftTarget.Matches(Choice(CardServiceCombo), CardProfileBox.Text, UmCustomerBox.Text))
+            throw new InvalidOperationException(
+                "تغيرت الخدمة أو الباقة أو مالك User Manager بعد توليد المسودة. أنشئ مسودة جديدة قبل التصدير.");
         string service = Choice(CardServiceCombo);
         string profile = CardProfileBox.Text.Trim();
         string customer = UmCustomerBox.Text.Trim();
         if (service == "userman" && customer.Length == 0 && _userManagerVersion == 6)
             customer = _userManagerProfiles.FirstOrDefault(
                 row => string.Equals(row.Name, profile, StringComparison.Ordinal))?.Owner ?? "";
-        return _generated.Select(voucher => (IReadOnlyDictionary<string, string?>)
-            new Dictionary<string, string?>
-            {
-                ["sequence"] = voucher.Sequence,
-                ["username"] = voucher.Username,
-                ["password"] = voucher.Password,
-                ["profile"] = profile,
-                ["service"] = service,
-                ["um_version"] = service == "userman" && _userManagerVersion != 0 ?
-                    _userManagerVersion.ToString(CultureInfo.InvariantCulture) : "",
-                ["customer"] = service == "userman" ? customer : "",
-                ["server"] = "all",
-                ["status"] = _published ? "published" : "draft",
-                ["created_at"] = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:sszzz",
-                    CultureInfo.InvariantCulture)
-            }).ToList();
+        return VoucherExportRows.Build(_generated, service, profile, customer,
+            _userManagerVersion, _published);
     }
 
     private void ExportExcel_Click(object sender, RoutedEventArgs e) =>
@@ -1316,7 +1306,8 @@ public partial class WorkspaceWindow : Window
             };
             if (dialog.ShowDialog(this) != true) return;
             VoucherPdfExporter.SavePdf(_generated, dialog.FileName, _printLayout, _cardArt);
-            CardsNotice.Text = "تم حفظ PDF بأبعاد A4 فعلية وأرقام قابلة للنسخ.";
+            CardsNotice.Text = "تم حفظ PDF بمقاس " + _printLayout.Paper.ToUpperInvariant() +
+                " حسب تخطيط الطباعة المختار.";
         }
         catch (Exception ex) when (ex is IOException or PrintLayoutException or
             InvalidOperationException or UnauthorizedAccessException)
