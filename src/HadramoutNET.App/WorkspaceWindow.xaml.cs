@@ -40,6 +40,7 @@ public partial class WorkspaceWindow : Window
     private readonly CancellationTokenSource _cancel = new();
     private IReadOnlyList<Voucher> _generated = [];
     private PrintLayoutOptions _printLayout = new();
+    private CardArtOptions _cardArt = new();
     private bool _published;
     private bool _uploading;
     private bool _verifyingUmDraft;
@@ -717,6 +718,15 @@ public partial class WorkspaceWindow : Window
     private void ExportExcel_Click(object sender, RoutedEventArgs e) =>
         ExportFile("Excel|*.xlsx", ".xlsx", (data, path) =>
             ExcelExporter.SaveExcel(data, path, "كروت حضرموت"));
+    private void EditCardArtwork_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmCurrentAccess()) return;
+        CardArtOptions? edited = CardArtworkEditorWindow.Edit(this, _cardArt);
+        if (edited is null) return;
+        _cardArt = edited;
+        CardsNotice.Text = "تم تطبيق تصميم الكرت لهذه الجلسة. احفظ الباقة للإبقاء على التصميم بعد إعادة التشغيل.";
+    }
+
     private void EditPrintLayout_Click(object sender, RoutedEventArgs e)
     {
         if (!ConfirmCurrentAccess()) return;
@@ -732,7 +742,7 @@ public partial class WorkspaceWindow : Window
         if (!ConfirmCurrentAccess()) return;
         try
         {
-            WindowsVoucherPrinter.Preview(this, _generated, _printLayout);
+            WindowsVoucherPrinter.Preview(this, _generated, _printLayout, _cardArt);
             CardsNotice.Text = "اكتملت معاينة الورقة الأولى، ولم يُرسل أي أمر للطابعة.";
         }
         catch (Exception ex) when (ex is PrintLayoutException or InvalidOperationException)
@@ -767,7 +777,7 @@ public partial class WorkspaceWindow : Window
 
         try
         {
-            var result = WindowsVoucherPrinter.Print(this, _generated, _printLayout);
+            var result = WindowsVoucherPrinter.Print(this, _generated, _printLayout, _cardArt);
             CardsNotice.Text = result.Message;
         }
         catch (Exception)
@@ -798,7 +808,7 @@ public partial class WorkspaceWindow : Window
                 OverwritePrompt = true
             };
             if (dialog.ShowDialog(this) != true) return;
-            VoucherPdfExporter.SavePdf(_generated, dialog.FileName, _printLayout);
+            VoucherPdfExporter.SavePdf(_generated, dialog.FileName, _printLayout, _cardArt);
             CardsNotice.Text = "تم حفظ PDF بأبعاد A4 فعلية وأرقام قابلة للنسخ.";
         }
         catch (Exception ex) when (ex is IOException or PrintLayoutException or
@@ -857,6 +867,8 @@ public partial class WorkspaceWindow : Window
             };
             foreach (var pair in PrintLayoutPresetCodec.ToSettings(_printLayout))
                 settings[pair.Key] = pair.Value;
+            foreach (var pair in CardArtPresetCodec.ToSettings(_cardArt))
+                settings[pair.Key] = pair.Value;
             _packages.SavePackage(PackageNameBox.Text, settings);
             ReloadPackages();
             WorkspaceStatus.Text = "حُفظت إعدادات هذه الباقة في HadramoutNET فقط.";
@@ -881,9 +893,11 @@ public partial class WorkspaceWindow : Window
     {
         if (PackagesGrid.SelectedItem is not PackagePreset selected) return;
         PrintLayoutOptions layout;
+        CardArtOptions artwork;
         try
         {
             layout = PrintLayoutPresetCodec.FromSettings(selected.Settings);
+            artwork = CardArtPresetCodec.FromSettings(selected.Settings);
         }
         catch (PrintLayoutException)
         {
@@ -891,6 +905,7 @@ public partial class WorkspaceWindow : Window
             return;
         }
         _printLayout = layout;
+        _cardArt = artwork;
         PrintLayoutInfo.Text = DescribePrintLayout(layout);
         PackageNameBox.Text = selected.Name;
         var values = selected.Settings;
@@ -908,7 +923,7 @@ public partial class WorkspaceWindow : Window
             format.ValueKind == JsonValueKind.String) SelectChoice(CardFormatCombo, format.GetString());
         if (values.TryGetValue("create.service", out var service) &&
             service.ValueKind == JsonValueKind.String) SelectChoice(CardServiceCombo, service.GetString());
-        WorkspaceStatus.Text = "تم استعادة خيارات إنشاء الكروت وتخطيط الطباعة الخاص بهذه الباقة.";
+        WorkspaceStatus.Text = "استُعيدت خيارات إنشاء الكروت وتخطيط الطباعة وتصميم البطاقة الخاص بهذه الباقة.";
     }
 
     private static void SelectChoice(ComboBox combo, string? tag)
