@@ -30,6 +30,7 @@ public static class VoucherPdfExporter
         PrintLayouts.ValidateUsernames(cards.Select(c => c.Username));
         options ??= new PrintLayoutOptions();
         artwork ??= new CardArtOptions();
+        CardArtPresetCodec.Validate(artwork);
         PrintSheetPlan plan = PrintLayouts.Plan(options, cards.Count);
 
         // Preflight EVERY voucher before touching a preexisting destination.
@@ -39,8 +40,13 @@ public static class VoucherPdfExporter
                 options.CardHeightMm, artwork);
         PrepareArialFont();
 
+        CardBackgroundPng? bgAsset = CardBackgroundAsset.Decode(artwork.BackgroundData);
         return AtomicExportFile.Write(destination, staged =>
         {
+            using var backgroundStream = bgAsset is null ? null :
+                new MemoryStream(bgAsset.Png, writable: false);
+            using XImage? backgroundImage = backgroundStream is null ?
+                null : XImage.FromStream(backgroundStream);
             using var pdf = new PdfDocument();
             pdf.Info.Title = "Hadramout Network Cards";
             pdf.Info.Author = "Hadramout Network Cards";
@@ -90,6 +96,9 @@ public static class VoucherPdfExporter
                     var gold = new XPen(Color(art.Border), 0.45);
 
                     graphics!.DrawRectangle(gold, bg, x, y, width, height);
+                    if (backgroundImage is not null && bgAsset is not null)
+                        DrawBackground(graphics, backgroundImage, bgAsset,
+                            artwork.BackgroundMode, x, y, width, height);
                     graphics.DrawRectangle(accent, x, y, Math.Min(width, 1.1 * mm), height);
 
                     foreach (CardArtText t in art.Texts)
@@ -125,6 +134,60 @@ public static class VoucherPdfExporter
                 throw new InvalidOperationException("عدد صفحات PDF لا يطابق مخطط الطباعة.");
             pdf.Save(staged);
         });
+    }
+
+    /// <summary>
+    /// Same physical image aspect and 300 dpi legacy tile reference as WPF.
+    /// Drawing is clipped to the card rectangle for fill and tile modes.
+    /// The PNG is decoded only once per PDF document.
+    /// </summary>
+    private static void DrawBackground(XGraphics g, XImage image,
+        CardBackgroundPng asset, string mode,
+        double x, double y, double width, double height)
+    {
+        double ratio = (double)asset.Width / asset.Height;
+        if (mode == "stretch")
+        {
+            g.DrawImage(image, x, y, width, height);
+            return;
+        }
+        if (mode == "fit")
+        {
+            double w = width, h = width / ratio;
+            if (h > height) { h = height; w = height * ratio; }
+            g.DrawImage(image, x + (width - w) / 2,
+                y + (height - h) / 2, w, h);
+            return;
+        }
+
+        var state = g.Save();
+        try
+        {
+            g.IntersectClip(new XRect(x, y, width, height));
+            if (mode == "fill")
+            {
+                double w = width, h = width / ratio;
+                if (h < height) { h = height; w = height * ratio; }
+                g.DrawImage(image, x + (width - w) / 2,
+                    y + (height - h) / 2, w, h);
+            }
+            else if (mode == "tile")
+            {
+                double w = asset.Width * 72.0 / 300.0;
+                double h = asset.Height * 72.0 / 300.0;
+                long cols = (long)Math.Ceiling(width / w);
+                long rows = (long)Math.Ceiling(height / h);
+                if (rows * cols > 10000)
+                    throw new PrintLayoutException(
+                        "صورة الخلفية صغيرة جدا لتكرارها على مساحة الكرت.");
+                for (long row = 0; row < rows; row++)
+                    for (long col = 0; col < cols; col++)
+                        g.DrawImage(image, x + col * w, y + row * h, w, h);
+            }
+            else
+                throw new PrintLayoutException("وضع صورة خلفية الكرت غير مدعوم.");
+        }
+        finally { g.Restore(state); }
     }
 
     private static void PrepareArialFont()
