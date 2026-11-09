@@ -74,12 +74,68 @@ public partial class WorkspaceWindow : Window
     private void ShowCards_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 1;
     private void ShowHotspot_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 2;
     private void ShowPackages_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 3;
+    private void ShowUserManager_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 4;
+    private void RefreshUserManager_Click(object sender, RoutedEventArgs e) =>
+        _ = LoadUserManagerAsync();
     private void Logout_Click(object sender, RoutedEventArgs e) => Close();
 
     private void RefreshDashboard_Click(object sender, RoutedEventArgs e) =>
         _ = LoadDashboardAsync();
     private void RefreshHotspot_Click(object sender, RoutedEventArgs e) =>
         _ = LoadHotspotAsync();
+
+    private bool _loadingUserManager;
+
+    /// <summary>Explicit read only: a permission failure is NOT an empty list.</summary>
+    private async Task LoadUserManagerAsync()
+    {
+        if (_loadingUserManager || !IsLoaded) return;
+        _loadingUserManager = true;
+        RefreshUserManagerButton.IsEnabled = false;
+        WorkspaceStatus.Text = "جارٍ اكتشاف User Manager وقراءة المستخدمين والباقات...";
+        UmProfilesGrid.ItemsSource = null;
+        UmUsersGrid.ItemsSource = null;
+        try
+        {
+            UserManagerCatalogResult result =
+                await new UserManagerCatalog().ReadAsync(_session, _cancel.Token);
+            if (!IsLoaded) return;
+
+            if (result.Version != 0)
+            {
+                UmProfilesGrid.ItemsSource = result.Profiles;
+                if (result.UsersComplete)
+                    UmUsersGrid.ItemsSource = result.Users;
+            }
+
+            WorkspaceStatus.Text = result.Status switch
+            {
+                "ready" => "User Manager v" + result.Version +
+                    " — " + result.Profiles.Count + " باقة و" +
+                    result.Users.Count + " مستخدم (قراءة فقط).",
+                "not_installed" => "User Manager غير مثبت على هذا الراوتر.",
+                "permission_denied" => "لا تتوفر صلاحية قراءة User Manager.",
+                "users_unavailable" => "تمت قراءة الباقات من User Manager v" +
+                    result.Version + " لكن تعذرت قراءة المستخدمين؛ لا تعني القائمة الفارغة صفرا.",
+                _ => "تعذرت قراءة User Manager."
+            };
+        }
+        catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
+        catch (InvalidOperationException)
+        {
+            if (IsLoaded) LockWorkspace();
+        }
+        catch (Exception)
+        {
+            if (IsLoaded)
+                WorkspaceStatus.Text = "فشل قراءة User Manager؛ لا تعتبر الأعداد غير المعروفة صفرا.";
+        }
+        finally
+        {
+            _loadingUserManager = false;
+            if (IsLoaded) RefreshUserManagerButton.IsEnabled = true;
+        }
+    }
 
     private async Task LoadDashboardAsync()
     {
