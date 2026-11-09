@@ -41,8 +41,8 @@ public partial class WorkspaceWindow : Window
     private IReadOnlyList<Voucher> _generated = [];
     private bool _published;
     private bool _uploading;
-    private readonly RouterVoucherPublisher _publisher = new();
-    private readonly RouterUserManagerPublisher _umPublisher = new();
+    private VoucherDeliveryJournal? _voucherAudit;
+    private VoucherDeliveryCoordinator? _deliveryCoordinator;
     private bool _deliveryUncertain;
     private int _userManagerVersion;
     private IReadOnlyList<UserManagerProfileRow> _userManagerProfiles = [];
@@ -94,11 +94,28 @@ public partial class WorkspaceWindow : Window
             _sessionReconciler = new RouterSessionReconciler(_maintenanceAudit);
             DisconnectSessionButton.IsEnabled = true;
             RecheckSessionButton.IsEnabled = true;
+            try
+            {
+                _voucherAudit = new VoucherDeliveryJournal(databasePath);
+                _deliveryCoordinator = new VoucherDeliveryCoordinator(_voucherAudit);
+                UploadCardsButton.IsEnabled = true;
+                var unresolved = _voucherAudit.ReadUnresolved(_session.Identity, _session.Endpoint, 20);
+                if (unresolved.Count != 0)
+                    CardsNotice.Text = $"تنبيه: توجد {unresolved.Count} عملية رفع غير محسومة لهذا الراوتر. راجع سجل رفع الكروت قبل أي محاولة جديدة.";
+            }
+            catch (Exception)
+            {
+                _voucherAudit = null;
+                _deliveryCoordinator = null;
+                UploadCardsButton.IsEnabled = false;
+                CardsNotice.Text = "تعذر تهيئة سجل رفع الكروت؛ أوقف البرنامج الرفع حماية من التكرار.";
+            }
             ReloadPackages();
         }
         catch (Exception)
         {
-            WorkspaceStatus.Text = "تعذر تهيئة قاعدة بيانات HadramoutNET أو سجل التدقيق؛ أُوقفت عمليات الفصل.";
+            UploadCardsButton.IsEnabled = false;
+            WorkspaceStatus.Text = "تعذر تهيئة قاعدة بيانات HadramoutNET أو سجل التدقيق؛ أُوقفت عمليات الفصل ورفع الكروت.";
         }
 
         _heartbeat.Start();
@@ -364,6 +381,11 @@ public partial class WorkspaceWindow : Window
                 "أنشئ مسودة كروت قبل الرفع.");
             return;
         }
+        if (_deliveryCoordinator is null)
+        {
+            CardsNotice.Text = "سجل رفع الكروت غير متاح؛ لم يُرسل أي أمر للراوتر.";
+            return;
+        }
         string service = Choice(CardServiceCombo);
         string profile = CardProfileBox.Text.Trim();
         MessageBoxResult confirmed = MessageBox.Show(this,
@@ -381,17 +403,12 @@ public partial class WorkspaceWindow : Window
         CardsNotice.Text = "جارٍ فحص المستخدمين والباقة ثم الرفع بدون تكرار تلقائي...";
         try
         {
-            VoucherPublishReport result = service == "userman"
-                ? await _umPublisher.PublishAsync(_session, _generated,
-                    new UserManagerPublishOptions(profile, Confirmed: true,
-                        Customer: UmCustomerBox.Text.Trim()), _cancel.Token)
-                : await _publisher.PublishAsync(
-                    _session, _generated,
-                    new VoucherPublishOptions(service, profile, Confirmed: true),
-                    _cancel.Token);
+            VoucherPublishReport result = await _deliveryCoordinator.PublishAsync(
+                _session, _generated, service, profile, UmCustomerBox.Text.Trim(),
+                confirmed: true, _cancel.Token);
             if (!IsLoaded) return;
             if (result.Success) _published = true;
-            if (result.Uncertain) _deliveryUncertain = true;
+            if (result.Uncertain || result.Added > 0) _deliveryUncertain = true;
             CardsNotice.Text = result.Message +
                 $" — تمت إضافة {result.Added} من {result.Attempted}.";
             if (!result.Success && (result.Added > 0 || result.Uncertain))
@@ -415,6 +432,35 @@ public partial class WorkspaceWindow : Window
         {
             _uploading = false;
             if (IsLoaded) UploadCardsButton.IsEnabled = true;
+        }
+    }
+
+    private void ShowDeliveryAudit_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmCurrentAccess()) return;
+        if (_voucherAudit is null)
+        {
+            CardsNotice.Text = "سجل رفع الكروت غير متاح.";
+            return;
+        }
+        try
+        {
+            var history = _voucherAudit.ReadRecent(100)
+                .Where(item => item.RouterIdentity == _session.Identity &&
+                    item.RouterEndpoint == _session.Endpoint)
+                .Take(12).ToList();
+            string details = history.Count == 0 ? "لم تسجل أي محاولات لهذا الراوتر." :
+                string.Join("\n", history.Select(item =>
+                    $"#{item.Id} | {item.CreatedAtUtc} | {item.Service} / {item.Profile} | " +
+                    $"{item.Added}/{item.Attempted} | {item.StateLabel}"));
+            MessageBox.Show(this, details +
+                "\n\nالعمليات غير المؤكدة تتطلب فحص الراوتر يدويا. لا يعيد البرنامج أي كروت تلقائيا.",
+                "سجل رفع الكروت (دون كلمات مرور)", MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception)
+        {
+            CardsNotice.Text = "تعذر قراءة سجل رفع الكروت؛ لا تغييرات على الراوتر.";
         }
     }
 
