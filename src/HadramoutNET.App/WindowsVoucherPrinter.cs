@@ -346,7 +346,8 @@ internal static class WindowsVoucherPrinter
             Width = width, Height = height,
             Background = background ?? ColorBrush(art.Background),
             BorderBrush = ColorBrush(art.Border),
-            BorderThickness = new Thickness(0.6),
+            BorderThickness = new Thickness(art.BorderWidthMm * dipPerMm),
+            CornerRadius = new CornerRadius(art.BorderRadiusMm * dipPerMm),
             Child = canvas,
             ClipToBounds = true,
             SnapsToDevicePixels = true
