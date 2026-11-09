@@ -34,6 +34,16 @@ public sealed class DesktopInputAndViewportTests
     }
 
     [Theory]
+    [InlineData("secret١٢", true, "secret12")]
+    [InlineData("secret١٢", false, "secret١٢")]
+    [InlineData("secret۱۲", true, "secret12")]
+    public void Password_digit_conversion_is_explicitly_reversible(
+        string password, bool convertDigits, string expected)
+    {
+        Assert.Equal(expected, AsciiNumerals.PasswordForRouter(password, convertDigits));
+    }
+
+    [Theory]
     [InlineData(1280, 820, 1024, 720, 1000, 696)]
     [InlineData(1280, 820, 1920, 1080, 1280, 820)]
     [InlineData(1280, 820, 640, 480, 616, 456)]
