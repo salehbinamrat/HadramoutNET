@@ -29,7 +29,9 @@ public partial class WorkspaceWindow : Window
     private readonly RouterDashboardReader _dashboard = new();
     private readonly RouterAccountDirectory _directory = new();
     private readonly RouterNetworkInventory _networkInventory = new();
-    private readonly RouterSessionDisconnect _sessionDisconnect = new();
+    private SessionMaintenanceJournal? _maintenanceAudit;
+    private RouterSessionDisconnect? _sessionDisconnect;
+    private bool _readingMaintenanceAudit;
     private readonly DispatcherTimer _heartbeat = new();
     private readonly CancellationTokenSource _cancel = new();
     private IReadOnlyList<Voucher> _generated = [];
@@ -77,12 +79,18 @@ public partial class WorkspaceWindow : Window
         try
         {
             string basePath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            _packages = new PackageSettingsStore(PackageSettingsStore.DefaultPath(basePath));
+            string databasePath = PackageSettingsStore.DefaultPath(basePath);
+            _packages = new PackageSettingsStore(databasePath);
+            // A durable SQLite journal is mandatory before enabling any
+            // remote disconnect. Failure leaves its UI button disabled.
+            _maintenanceAudit = new SessionMaintenanceJournal(databasePath);
+            _sessionDisconnect = new RouterSessionDisconnect(_maintenanceAudit);
+            DisconnectSessionButton.IsEnabled = true;
             ReloadPackages();
         }
         catch (Exception)
         {
-            WorkspaceStatus.Text = "تعذر قراءة إعدادات الباقات؛ لم تُغير البيانات.";
+            WorkspaceStatus.Text = "تعذر تهيئة قاعدة بيانات HadramoutNET أو سجل التدقيق؛ أُوقفت عمليات الفصل.";
         }
 
         _heartbeat.Start();
@@ -109,6 +117,7 @@ public partial class WorkspaceWindow : Window
     {
         Pages.SelectedIndex = 7;
         _ = LoadNetworkServersAsync();
+        _ = LoadMaintenanceAuditAsync();
     }
     private void RefreshUserManager_Click(object sender, RoutedEventArgs e) =>
         _ = LoadUserManagerAsync();
@@ -759,6 +768,11 @@ public partial class WorkspaceWindow : Window
     {
         if (_disconnectingSession || _readingNetworkSessions ||
             !IsLoaded || !ConfirmCurrentAccess()) return;
+        if (_sessionDisconnect is null)
+        {
+            SessionsNotice.Text = "سجل التدقيق غير جاهز؛ لا يمكن فصل الجلسات دون حفظ سجل دائم.";
+            return;
+        }
         if (SessionsGrid.SelectedItem is not NetworkActiveSession selected)
         {
             SessionsNotice.Text = "اختر جلسة واحدة من القائمة أولا.";
@@ -803,6 +817,7 @@ public partial class WorkspaceWindow : Window
                 SessionsGrid.ItemsSource = null;
             SessionsNotice.Text = result.Message;
             if (!ConfirmCurrentAccess()) return;
+            await LoadMaintenanceAuditAsync();
         }
         catch (OperationCanceledException) when (_cancel.IsCancellationRequested)
         {
@@ -827,13 +842,53 @@ public partial class WorkspaceWindow : Window
             _disconnectingSession = false;
             if (IsLoaded)
             {
-                DisconnectSessionButton.IsEnabled = true;
+                DisconnectSessionButton.IsEnabled = _sessionDisconnect is not null;
                 SessionsGrid.IsEnabled = true;
             }
         }
     }
 
 
+
+    private void RefreshMaintenanceAudit_Click(object sender, RoutedEventArgs e) =>
+        _ = LoadMaintenanceAuditAsync();
+
+    private async Task LoadMaintenanceAuditAsync()
+    {
+        if (_readingMaintenanceAudit || !IsLoaded || !ConfirmCurrentAccess()) return;
+        if (_maintenanceAudit is null)
+        {
+            MaintenanceAuditNotice.Text = "سجل التدقيق غير متاح؛ عمليات الفصل معطلة.";
+            MaintenanceAuditGrid.ItemsSource = null;
+            return;
+        }
+
+        _readingMaintenanceAudit = true;
+        MaintenanceAuditNotice.Text = "جارٍ تحميل سجل العمليات المحلي...";
+        try
+        {
+            IReadOnlyList<SessionMaintenanceAuditEntry> items =
+                await Task.Run(() => _maintenanceAudit.ReadRecent(200), _cancel.Token);
+            if (!IsLoaded) return;
+            MaintenanceAuditGrid.ItemsSource = items;
+            int unresolved = items.Count(x => x.RequiresManualReconciliation);
+            MaintenanceAuditNotice.Text =
+                "آخر " + items.Count + " عملية محفوظة على هذا الجهاز. " +
+                "عمليات تحتاج مراجعة يدوية: " + unresolved + ". " +
+                "القبول يعني قبول الأمر من الراوتر، وليس تأكيد فصل العميل.";
+        }
+        catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
+        catch (Exception)
+        {
+            if (IsLoaded)
+            {
+                MaintenanceAuditGrid.ItemsSource = null;
+                MaintenanceAuditNotice.Text =
+                    "تعذر قراءة سجل التدقيق المحلي؛ لا تعتبر سجلات العمليات المفقودة ناجحة.";
+            }
+        }
+        finally { _readingMaintenanceAudit = false; }
+    }
 
     private async Task LoadNetworkServersAsync()
     {
