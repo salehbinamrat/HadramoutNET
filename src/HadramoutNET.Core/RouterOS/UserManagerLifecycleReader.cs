@@ -75,10 +75,40 @@ public sealed class UserManagerLifecycleReader
 
             string root = version == 7 ? "/user-manager" : "/tool/user-manager";
             string userProjection = version == 7 ? V7Users : V6Users;
-            var users = await ReadVerifiedRows(session, root + "/user/print",
-                userProjection, MaxUsers, cancellationToken).ConfigureAwait(false);
+            IReadOnlyList<IReadOnlyDictionary<string, string>>? users;
+            bool fullV6ReadUsed = false;
+            try
+            {
+                users = await ReadVerifiedRows(session, root + "/user/print",
+                    userProjection, MaxUsers, cancellationToken).ConfigureAwait(false);
+            }
+            catch (RouterOsTrapException ex) when (version == 6 &&
+                IsInvalidProjection(ex.Message))
+            {
+                // Some legacy v6 routers reject projected dynamic properties.
+                // The fallback is strictly read-only, count-verified, and
+                // exposes only an allowlist of fields to the classifier.
+                fullV6ReadUsed = true;
+                users = await ReadVerifiedRows(session, root + "/user/print",
+                    userProjection, MaxUsers, cancellationToken,
+                    noProjection: true).ConfigureAwait(false);
+            }
+
             if (users is null)
                 return new UserManagerLifecycleReadResult("incomplete", null);
+
+            if (version == 6 && users.Count > 0 && !HasLegacyLifecycleFields(users) &&
+                !fullV6ReadUsed)
+            {
+                // RouterOS 6 can silently omit all accounting fields from
+                // .proplist but include them in unprojected rows. Attempt
+                // only ONE bounded complete fallback, never repeated scans.
+                users = await ReadVerifiedRows(session, root + "/user/print",
+                    userProjection, MaxUsers, cancellationToken,
+                    noProjection: true).ConfigureAwait(false);
+                if (users is null)
+                    return new UserManagerLifecycleReadResult("incomplete", null);
+            }
 
             IReadOnlyList<IReadOnlyDictionary<string, string>> assignments = [];
             IReadOnlyDictionary<string, long>? legacyProfileLimits = null;
@@ -98,13 +128,7 @@ public sealed class UserManagerLifecycleReader
                         value : "")))
                     return new UserManagerLifecycleReadResult("incomplete", null);
             }
-            else if (users.Count > 0 && !users.Any(row =>
-                     row.ContainsKey("actual-profile") ||
-                     row.ContainsKey("money-used") ||
-                     row.ContainsKey("uptime-used") ||
-                     row.ContainsKey("transfer-limit") ||
-                     row.ContainsKey("total-download-used") ||
-                     row.ContainsKey("download-used")))
+            else if (users.Count > 0 && !HasLegacyLifecycleFields(users))
             {
                 // ROS6 can silently omit dynamic fields from a projected
                 // response. Never show "0 active/expired" for such data.
@@ -175,7 +199,8 @@ public sealed class UserManagerLifecycleReader
 
     private static async Task<IReadOnlyList<IReadOnlyDictionary<string, string>>?>
         ReadVerifiedRows(RouterAuthorizedSession session, string menu,
-            string projection, int maximum, CancellationToken cancellationToken)
+            string projection, int maximum, CancellationToken cancellationToken,
+            bool noProjection = false)
     {
         var count = await session.ReadAsync(menu,
             new Dictionary<string, string> { ["count-only"] = "yes" },
@@ -187,7 +212,8 @@ public sealed class UserManagerLifecycleReader
             return null;
 
         var rows = await session.ReadAsync(menu,
-            new Dictionary<string, string> { [".proplist"] = projection },
+            noProjection ? null :
+                new Dictionary<string, string> { [".proplist"] = projection },
             cancellationToken: cancellationToken).ConfigureAwait(false);
         if (rows.Rows.Count != expected) return null;
 
@@ -206,6 +232,27 @@ public sealed class UserManagerLifecycleReader
             sanitized.Add(allowed);
         }
         return sanitized;
+    }
+
+    private static bool HasLegacyLifecycleFields(
+        IReadOnlyList<IReadOnlyDictionary<string, string>> users) =>
+        users.Any(row =>
+            row.ContainsKey("actual-profile") ||
+            row.ContainsKey("money-used") ||
+            row.ContainsKey("uptime-used") ||
+            row.ContainsKey("transfer-limit") ||
+            row.ContainsKey("total-download-used") ||
+            row.ContainsKey("download-used"));
+
+    private static bool IsInvalidProjection(string? message)
+    {
+        string lower = (message ?? "").ToLowerInvariant();
+        return lower.Contains("unknown parameter", StringComparison.Ordinal) ||
+            lower.Contains("unknown argument", StringComparison.Ordinal) ||
+            lower.Contains("no such argument", StringComparison.Ordinal) ||
+            lower.Contains("expected end of command", StringComparison.Ordinal) ||
+            lower.Contains("invalid argument", StringComparison.Ordinal) ||
+            lower.Contains("invalid value", StringComparison.Ordinal);
     }
 
     private static bool IsRecognizedState(string? state)
