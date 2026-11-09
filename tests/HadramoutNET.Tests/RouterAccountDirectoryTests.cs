@@ -67,7 +67,7 @@ public sealed class RouterAccountDirectoryTests
     }
 
     [Fact]
-    public async Task User_manager_v6_reads_username_without_asking_for_credentials()
+    public async Task Ppp_permission_failure_is_unavailable_not_an_empty_success()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -78,72 +78,13 @@ public sealed class RouterAccountDirectoryTests
             using var peer = await listener.AcceptTcpClientAsync(deadline.Token);
             using var stream = peer.GetStream();
             await AcceptLogin(stream, deadline.Token);
-            var query = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
-            Assert.Contains("/tool/user-manager/user/print", query);
-            Assert.Contains("=.proplist=username,disabled,customer", query);
-            Assert.DoesNotContain(query, word => word.Contains("password", StringComparison.OrdinalIgnoreCase));
-            await Reply(stream, "!re", "=username=card42", "=customer=admin",
-                "=disabled=false", "=password=secret-must-not-display");
-            await Reply(stream, "!done");
-        }, deadline.Token);
-        await using var session = await Connect(port, deadline.Token);
-        var result = await new RouterAccountDirectory().ReadUserManagerAsync(session, deadline.Token);
-        Assert.True(result.Available);
-        Assert.Equal("v6", result.Version);
-        Assert.Equal("card42", Assert.Single(result.Accounts).Name);
-        Assert.DoesNotContain("secret-must-not-display", result.ToString());
-        await server;
-    }
-
-    [Fact]
-    public async Task User_manager_v7_fallback_only_after_unsupported_v6_command()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-        Task server = Task.Run(async () =>
-        {
-            using var peer = await listener.AcceptTcpClientAsync(deadline.Token);
-            using var stream = peer.GetStream();
-            await AcceptLogin(stream, deadline.Token);
-            Assert.Contains("/tool/user-manager/user/print",
+            Assert.Contains("/ppp/secret/print",
                 await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token));
-            await Reply(stream, "!trap", "=message=no such command");
-            await Reply(stream, "!done");
-            var second = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
-            Assert.Contains("/user-manager/user/print", second);
-            Assert.Contains("=.proplist=name,disabled,group", second);
-            await Reply(stream, "!re", "=name=card7", "=group=customers", "=disabled=no");
+            await Reply(stream, "!trap", "=message=permission denied");
             await Reply(stream, "!done");
         }, deadline.Token);
         await using var session = await Connect(port, deadline.Token);
-        var result = await new RouterAccountDirectory().ReadUserManagerAsync(session, deadline.Token);
-        Assert.True(result.Available);
-        Assert.Equal("v7", result.Version);
-        Assert.Equal("card7", Assert.Single(result.Accounts).Name);
-        await server;
-    }
-
-    [Fact]
-    public async Task User_manager_permission_denied_does_not_fallback_to_v7()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-        Task server = Task.Run(async () =>
-        {
-            using var peer = await listener.AcceptTcpClientAsync(deadline.Token);
-            using var stream = peer.GetStream();
-            await AcceptLogin(stream, deadline.Token);
-            Assert.Contains("/tool/user-manager/user/print",
-                await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token));
-            await Reply(stream, "!trap", "=message=not enough permissions");
-            await Reply(stream, "!done");
-        }, deadline.Token);
-        await using var session = await Connect(port, deadline.Token);
-        var result = await new RouterAccountDirectory().ReadUserManagerAsync(session, deadline.Token);
+        var result = await new RouterAccountDirectory().ReadPppAsync(session, deadline.Token);
         Assert.False(result.Available);
         Assert.Empty(result.Accounts);
         Assert.Equal("unavailable", result.Version);
