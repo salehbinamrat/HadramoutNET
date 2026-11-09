@@ -376,6 +376,31 @@ public partial class WorkspaceWindow : Window
         return options;
     }
 
+    private VoucherCardMetadataOptions CurrentCardMetadataOptions()
+    {
+        if (!decimal.TryParse(CardPriceBox.Text.Trim(),
+                NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture,
+                out decimal price) ||
+            !decimal.TryParse(CardCapacityBox.Text.Trim(),
+                NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture,
+                out decimal capacity) ||
+            !int.TryParse(CardHoursBox.Text.Trim(),
+                NumberStyles.None, CultureInfo.InvariantCulture, out int hours) ||
+            !int.TryParse(CardMinutesBox.Text.Trim(),
+                NumberStyles.None, CultureInfo.InvariantCulture, out int minutes) ||
+            !int.TryParse(CardValidityBox.Text.Trim(),
+                NumberStyles.None, CultureInfo.InvariantCulture, out int validity))
+            throw new CardGenerationException(
+                "السعر والسعة والمدة والصلاحية يجب أن تكون قيما إنجليزية صحيحة.");
+
+        var options = new VoucherCardMetadataOptions(
+            Price: price, Capacity: capacity,
+            CapacityUnit: Choice(CapacityUnitCombo),
+            Hours: hours, Minutes: minutes, ValidityDays: validity);
+        VoucherCardMetadata.Validate(options);
+        return options;
+    }
+
     private void GenerateCards_Click(object sender, RoutedEventArgs e)
     {
         if (_uploading || _verifyingUmDraft)
@@ -387,13 +412,15 @@ public partial class WorkspaceWindow : Window
         try
         {
             CardGenerationOptions options = CurrentGenerationOptions();
+            VoucherCardMetadataOptions metadata = CurrentCardMetadataOptions();
             VoucherDraftTarget target = VoucherDraftTarget.Create(
                 Choice(CardServiceCombo), CardProfileBox.Text, UmCustomerBox.Text);
 
             // This is a LOCAL draft. A remote uniqueness and profile check is
             // mandatory before actually importing it to the router.
-            IReadOnlyList<Voucher> nextDraft =
-                VoucherGenerator.Generate(options, _ => false);
+            IReadOnlyList<Voucher> nextDraft = VoucherCardMetadata.Attach(
+                VoucherGenerator.Generate(options, _ => false),
+                metadata, DateTimeOffset.Now);
             _generated = nextDraft;
             _draftTarget = target;
             _published = false;
@@ -893,6 +920,9 @@ public partial class WorkspaceWindow : Window
         {
             var settings = CardGenerationPresetCodec.ToSettings(
                 CurrentGenerationOptions());
+            foreach (var item in VoucherCardMetadataPresetCodec.ToSettings(
+                CurrentCardMetadataOptions()))
+                settings[item.Key] = item.Value;
             settings["create.quantity"] = JsonSerializer.SerializeToElement(QtyBox.Text);
             var legacy = new Dictionary<string, JsonElement>
             {
@@ -936,11 +966,13 @@ public partial class WorkspaceWindow : Window
         PrintLayoutOptions layout;
         CardArtOptions artwork;
         CardGenerationOptions generation;
+        VoucherCardMetadataOptions metadata;
         try
         {
             layout = PrintLayoutPresetCodec.FromSettings(selected.Settings);
             artwork = CardArtPresetCodec.FromSettings(selected.Settings);
             generation = CardGenerationPresetCodec.FromSettings(selected.Settings);
+            metadata = VoucherCardMetadataPresetCodec.FromSettings(selected.Settings);
         }
         catch (ArgumentException)
         {
@@ -960,6 +992,12 @@ public partial class WorkspaceWindow : Window
         PasswordAlphabetBox.Text = generation.PasswordCharacters;
         StartSequenceBox.Text = generation.StartSequence.ToString(CultureInfo.InvariantCulture);
         SelectChoice(SequenceModeCombo, generation.SequenceMode);
+        CardPriceBox.Text = metadata.Price.ToString("G29", CultureInfo.InvariantCulture);
+        CardCapacityBox.Text = metadata.Capacity.ToString("G29", CultureInfo.InvariantCulture);
+        SelectChoice(CapacityUnitCombo, metadata.CapacityUnit);
+        CardHoursBox.Text = metadata.Hours.ToString(CultureInfo.InvariantCulture);
+        CardMinutesBox.Text = metadata.Minutes.ToString(CultureInfo.InvariantCulture);
+        CardValidityBox.Text = metadata.ValidityDays.ToString(CultureInfo.InvariantCulture);
         if (values.TryGetValue("create.profile", out var profile) &&
             profile.ValueKind == JsonValueKind.String) CardProfileBox.Text = profile.GetString();
         if (values.TryGetValue("create.customer", out var owner) &&
@@ -967,7 +1005,7 @@ public partial class WorkspaceWindow : Window
         SelectChoice(CardFormatCombo, generation.Format);
         if (values.TryGetValue("create.service", out var service) &&
             service.ValueKind == JsonValueKind.String) SelectChoice(CardServiceCombo, service.GetString());
-        WorkspaceStatus.Text = "استُعيدت خيارات إنشاء الكروت وتخطيط الطباعة وتصميم البطاقة الخاص بهذه الباقة.";
+        WorkspaceStatus.Text = "استُعيدت خيارات الإنشاء والسعر والسعة والمدة والصلاحية وتصميم الطباعة لهذه الباقة.";
     }
 
     private static void SelectChoice(ComboBox combo, string? tag)
