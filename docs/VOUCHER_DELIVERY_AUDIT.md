@@ -113,3 +113,38 @@ wrong usernames; the app cannot prove their origin.
 The action never retries, deletes, edits, activates or creates remote
 accounts, and never reclassifies an old failed/uncertain audit record
 to success. On-router hardware acceptance remains outstanding.
+
+## Write-ahead User Manager 6/7 account creation and profile binding stages
+
+The WPF upload path now supplies a durable `IUserManagerStageAudit` to
+`RouterUserManagerPublisher` for all actual User Manager mutations. Two
+immutable, append-only tables are created in HadramoutNET's existing SQLite
+database:
+
+- `voucher_delivery_um_stages`: attempt ID, card **ordinal** within the
+  batch, RouterOS User Manager version, an allowlisted phase
+  (`create_user` or `bind_profile`), and the UTC time when the phase
+  was committed **before** the corresponding RouterOS write.
+- `voucher_delivery_um_stage_ack`: a unique link to the prepared phase,
+  and the timestamp at which RouterOS returned a successful `!done`
+  acknowledgement. Failed or interrupted commands have no acknowledgement.
+
+The journal does **not** record usernames, passwords, returned RouterOS record
+IDs, remote error text, license keys or credentials. The phase ordering is
+strict: the profile binding cannot begin without the matching create phase
+acknowledgement; the next card cannot begin without the preceding binding
+acknowledgement. Attempt/service/version/ordinal/state are validated by SQL.
+
+If preparing or acknowledging a phase fails, no later phase is permitted to
+reach the router. Missing acknowledgements survive an app restart and
+remain *unknown*, whether the packet actually reached the router or not.
+The WPF audit displays the latest recorded phase and its acknowledgement
+status, not a fabricated success. Acknowledgement only reflects a successful
+API response, not independent proof of a working voucher, consumed allowance
+or correct RADIUS authentication.
+
+The earlier manual read-only UM6/UM7 reconciliation and the immutable
+batch-level audit history remain intact. No new automatic retries, deletes,
+repairs, profile activations or per-account persistent identifiers are
+introduced. This is a safety and diagnostics milestone, not full parity or
+a shipping release. Hardware verification remains necessary.
