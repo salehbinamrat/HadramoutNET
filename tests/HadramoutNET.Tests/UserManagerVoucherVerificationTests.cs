@@ -169,6 +169,38 @@ public sealed class UserManagerVoucherVerificationTests
     }
 
     [Fact]
+    public async Task Partial_user_projection_is_incomplete_never_a_false_missing_voucher()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(18));
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var server = HandlePeer(listener, timeout.Token, async stream =>
+        {
+            await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
+            await Reply(stream, "!re", "=name=daily");
+            await Reply(stream, "!done");
+            await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
+            await Reply(stream, "!re", "=name=known");
+            await Reply(stream, "!re", "=disabled=no"); // Malformed/unprojected username.
+            await Reply(stream, "!done");
+            var count = await RouterOsSentenceCodec.ReadAsync(stream, timeout.Token);
+            Assert.Contains("/user-manager/user/print", count);
+            Assert.Contains("=count-only=yes", count);
+            await Reply(stream, "!done", "=ret=2");
+            // The verifier MUST NOT read association rows after an incomplete user list.
+        });
+        await using var session = await Connect(port, timeout.Token);
+        var result = await new UserManagerVoucherVerifier().VerifyAsync(
+            session, ["unseen"], "daily", timeout.Token);
+        Assert.False(result.Available);
+        Assert.Equal("incomplete", result.Status);
+        Assert.Empty(result.Cards);
+        await session.DisposeAsync();
+        await server;
+    }
+
+    [Fact]
     public async Task Validation_rejects_duplicate_or_invalid_usernames_before_any_read()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
