@@ -65,10 +65,11 @@ public static class CardGenerationPresetCodec
             options.UsernameCharacters.EnumerateRunes().Any(InvalidRune) ||
             options.UsernameCharacters.EnumerateRunes().Count() > 128)
             throw new CardGenerationException("حروف اسم المستخدم غير صالحة.");
-        if (options.Format == "code_password" &&
-            (string.IsNullOrWhiteSpace(options.PasswordCharacters) ||
-             options.PasswordCharacters.EnumerateRunes().Any(InvalidRune) ||
-             options.PasswordCharacters.EnumerateRunes().Count() > 128))
+        // Validate every saved field, even when a mode currently ignores it:
+        // switching card format later must never activate hidden corrupt data.
+        if (string.IsNullOrWhiteSpace(options.PasswordCharacters) ||
+            options.PasswordCharacters.EnumerateRunes().Any(InvalidRune) ||
+            options.PasswordCharacters.EnumerateRunes().Count() > 128)
             throw new CardGenerationException("حروف كلمة المرور غير صالحة.");
         string prefix = options.UsernamePrefix ?? "";
         if (prefix.EnumerateRunes().Count() > options.CodeLength ||
