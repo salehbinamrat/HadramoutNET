@@ -42,7 +42,6 @@ public partial class WorkspaceWindow : Window
     private bool _checking;
     private bool _refreshing;
     private bool _readingPpp;
-    private bool _readingUserManager;
 
     private sealed record HotspotRow(
         string Name, string Profile, string Disabled, string LimitUptime, string LimitBytes);
@@ -83,13 +82,8 @@ public partial class WorkspaceWindow : Window
     private void ShowPackages_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 3;
     private void ShowPpp_Click(object sender, RoutedEventArgs e)
     {
-        Pages.SelectedIndex = 4;
-        _ = LoadPppAsync();
-    }
-    private void ShowUserManager_Click(object sender, RoutedEventArgs e)
-    {
         Pages.SelectedIndex = 5;
-        _ = LoadUserManagerAsync();
+        _ = LoadPppAsync();
     }
     private void ShowUserManager_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 4;
     private void RefreshUserManager_Click(object sender, RoutedEventArgs e) =>
@@ -102,8 +96,6 @@ public partial class WorkspaceWindow : Window
         _ = LoadHotspotAsync();
     private void RefreshPpp_Click(object sender, RoutedEventArgs e) =>
         _ = LoadPppAsync();
-    private void RefreshUserManager_Click(object sender, RoutedEventArgs e) =>
-        _ = LoadUserManagerAsync();
 
     private bool _loadingUserManager;
 
@@ -251,33 +243,6 @@ public partial class WorkspaceWindow : Window
             if (IsLoaded) PppNotice.Text = "تعذر قراءة حسابات PPPoE؛ لا تغييرات على الراوتر.";
         }
         finally { _readingPpp = false; }
-    }
-
-    private async Task LoadUserManagerAsync()
-    {
-        if (_readingUserManager || !IsLoaded || !ConfirmCurrentAccess()) return;
-        _readingUserManager = true;
-        UserManagerNotice.Text = "جارٍ قراءة مستخدمي User Manager...";
-        try
-        {
-            RouterDirectoryResult result = await _directory.ReadUserManagerAsync(
-                _session, _cancel.Token);
-            if (!IsLoaded) return;
-            UserManagerGrid.ItemsSource = result.Available ? result.Accounts : null;
-            UserManagerNotice.Text = result.Available
-                ? $"تم تحميل {result.Accounts.Count} مستخدم من User Manager {result.Version}."
-                : "خدمة User Manager غير متاحة أو لا توجد صلاحية قراءة.";
-        }
-        catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
-        catch (InvalidOperationException)
-        {
-            if (IsLoaded) LockWorkspace();
-        }
-        catch (Exception)
-        {
-            if (IsLoaded) UserManagerNotice.Text = "تعذر قراءة User Manager؛ لا تغييرات على الراوتر.";
-        }
-        finally { _readingUserManager = false; }
     }
 
     private static string Field(IReadOnlyDictionary<string, string> row, string key) =>
