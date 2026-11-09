@@ -39,15 +39,17 @@ public sealed class CardTemplateExchangeTests
         var imported = CardTemplateExchange.Import(Encoding.UTF8.GetBytes(json));
         Assert.True(imported.Artwork.ShowTitle);
         Assert.Equal("شبكة حضرموت", imported.Artwork.Title);
-        Assert.Equal(3, imported.UnrecognizedCardSettings.Count);
+        Assert.Equal(2, imported.UnrecognizedCardSettings.Count);
+        Assert.Equal(1.4, imported.Artwork.LayerScales!["username"]);
         Assert.DoesNotContain("create.profile", imported.UnrecognizedCardSettings.Keys);
         byte[] reexport = CardTemplateExchange.Export(
             imported.Artwork, imported.UnrecognizedCardSettings);
         var again = CardTemplateExchange.Import(reexport);
         Assert.Equal(imported.UnrecognizedCardSettings.Count,
             again.UnrecognizedCardSettings.Count);
-        Assert.Equal(1.4, again.UnrecognizedCardSettings[
-            "card.size.username"].GetDouble());
+        Assert.Equal(1.4, again.Artwork.LayerScales!["username"]);
+        Assert.Equal("Arial", again.UnrecognizedCardSettings[
+            "card.font_family"].GetString());
     }
 
     [Theory]
