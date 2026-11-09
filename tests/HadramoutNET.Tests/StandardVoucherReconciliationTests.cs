@@ -127,6 +127,35 @@ public sealed class StandardVoucherReconciliationTests
     }
 
     [Fact]
+    public async Task Missing_or_unknown_disabled_field_must_never_be_reported_enabled()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(18));
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var server = Serve(listener, deadline.Token, async stream =>
+        {
+            var count = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("=count-only=yes", count);
+            await Reply(stream, "!done", "=ret=2");
+            var list = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("=.proplist=name,profile,disabled", list);
+            await Reply(stream, "!re", "=name=one", "=profile=weekly");
+            await Reply(stream, "!re", "=name=two", "=profile=weekly",
+                "=disabled=undocumented-value");
+            await Reply(stream, "!done");
+        });
+        await using var session = await Login(port, deadline.Token);
+        var check = await new RouterStandardVoucherVerifier().VerifyAsync(
+            session, "hotspot", ["one", "two"], "weekly", deadline.Token);
+        Assert.True(check.Available);
+        Assert.Equal(new[] { "disabled_unknown", "disabled_unknown" },
+            check.Cards.Select(x => x.State));
+        await session.DisposeAsync();
+        await server;
+    }
+
+    [Fact]
     public async Task Incomplete_hotspot_result_is_unavailable_and_cannot_record_missing_card()
     {
         using var data = new TempDb();
