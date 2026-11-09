@@ -120,6 +120,27 @@ public sealed class UserManagerLifecycleClassificationTests
     }
 
     [Fact]
+    public void V6_uses_username_field_even_when_router_returns_empty_name_alias()
+    {
+        var row = Row("name=", "username=real-voucher",
+            "actual-profile=weekly", "total-download-used=0");
+        var snapshot = UserManagerLifecycleClassifier.Classify(6, [row], []);
+        Assert.Equal("real-voucher", Assert.Single(snapshot.Rows).Username);
+        Assert.Equal(1, snapshot.Valid);
+    }
+
+    [Fact]
+    public void V6_last_used_mac_alone_is_usage_evidence_but_never_exhaustion()
+    {
+        var row = Row("username=card", "actual-profile=weekly",
+            "last-used-ip=", "last-used-mac=AA:BB:CC:DD:EE:FF",
+            "transfer-limit=100", "total-download-used=0");
+        var snapshot = UserManagerLifecycleClassifier.Classify(6, [row], []);
+        Assert.Equal("active", Assert.Single(snapshot.Rows).State);
+        Assert.Equal(0, snapshot.Expired);
+    }
+
+    [Fact]
     public void Large_inventory_classifies_in_one_pass_without_assignments_count_inflation()
     {
         var users = Enumerable.Range(0, 25000)
