@@ -382,6 +382,12 @@
                                     Style="{StaticResource NavyReplacementButton}"/>
                             <Button Content="تحديث الأرشيف" Width="145" Height="36"
                                     Margin="4" Click="RefreshLegacy_Click"/>
+                            <TextBox x:Name="LegacySearchBox" Width="190" Height="36"
+                                     VerticalContentAlignment="Center" MaxLength="128"
+                                     Margin="4" ToolTip="البحث النصي في أسماء المستخدمين داخل الأرشيف"
+                                     AutomationProperties.Name="البحث باسم مستخدم قديم"/>
+                            <Button Content="بحث باسم المستخدم" Width="155" Height="36"
+                                    Margin="4" Click="SearchLegacy_Click"/>
                         </WrapPanel>
                         <TextBlock x:Name="LegacyPreviewText" Grid.Row="2"
                                    TextWrapping="Wrap" Margin="5,4,5,12"
