@@ -11,9 +11,13 @@
 #endif
 
 [Setup]
+#if Arch == "x64"
 AppId={{6D6D2E7D-C212-46D0-BB8A-83E5ED84EC0D}
-AppName=HadramoutNET QA Candidate
-AppVerName=HadramoutNET QA Candidate 0.0.1
+#else
+AppId={{028B60C7-5B86-489D-A624-8848F0CEDA14}
+#endif
+AppName=HadramoutNET QA Candidate ({#Arch})
+AppVerName=HadramoutNET QA Candidate ({#Arch}) 0.0.1
 AppVersion=0.0.1
 VersionInfoVersion=0.0.1.0
 AppPublisher=HadramoutNET
