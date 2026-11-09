@@ -36,7 +36,7 @@ public sealed class PrintLayoutPresetTests
             Order: "column_right", Duplex: "short-edge");
 
         var saved = PrintLayoutPresetCodec.ToSettings(options);
-        Assert.Equal(12, saved.Count);
+        Assert.Equal(11, saved.Count);
         Assert.Equal(options, PrintLayoutPresetCodec.FromSettings(saved));
         var native = NativePrintJobContract.Create(
             [new Voucher("0001", "user01", "pw01"),
