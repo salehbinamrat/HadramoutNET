@@ -313,11 +313,13 @@ public sealed class VoucherDeliveryJournal
         if (command.ExecuteNonQuery() != 1)
             throw new InvalidOperationException(
                 "محاولة الرفع لا تتطابق مع الراوتر أو العدد أو ليست غير محسومة.");
+        string observedUtc = (string)command.Parameters["$time"].Value;
+        command.Parameters.Clear();
         command.CommandText = "SELECT last_insert_rowid()";
         long id = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
-        return new VoucherDeliveryCheck(id, attemptId,
-            (string)command.Parameters["$time"].Value,
-            version, new Dictionary<string, int>(counts, StringComparer.Ordinal));
+        return new VoucherDeliveryCheck(id, attemptId, observedUtc,
+            version, counts.ToDictionary(item => item.Key, item => item.Value,
+                StringComparer.Ordinal));
     }
 
     public IReadOnlyList<VoucherDeliveryCheck> ReadChecks(long attemptId, int limit = 30)
