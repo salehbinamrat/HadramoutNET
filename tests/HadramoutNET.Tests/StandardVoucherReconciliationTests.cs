@@ -12,7 +12,7 @@ public sealed class StandardVoucherReconciliationTests
 {
     private sealed class TempDb : IDisposable
     {
-        private readonly string _root = Path.Combine(Path.GetTempPath(),
+        private readonly string _root = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
             "hnet-standard-review-" + Guid.NewGuid().ToString("N"));
         public string Path => System.IO.Path.Combine(_root, "hadramout-net.db");
         public TempDb() => Directory.CreateDirectory(_root);
