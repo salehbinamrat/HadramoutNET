@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using HadramoutNET.Core.Cards;
 using Microsoft.Data.Sqlite;
 
@@ -30,6 +31,15 @@ public sealed record VoucherDeliveryAuditEntry(
 }
 
 /// <summary>
+/// Append-only read-only observations of an operator-supplied voucher list.
+/// Individual usernames, passwords and credentials are NEVER stored.
+/// These snapshots are not proof that a prior network mutation succeeded.
+/// </summary>
+public sealed record VoucherDeliveryCheck(
+    long Id, long AttemptId, string ObservedUtc, int Version,
+    IReadOnlyDictionary<string, int> Counts);
+
+/// <summary>
 /// Append-once attempt identifiers with irreversible, narrowly allowed
 /// transitions. Stored only in HadramoutNET's isolated SQLite database.
 /// </summary>
@@ -43,6 +53,19 @@ public sealed class VoucherDeliveryJournal
         "customer_required", "customer_mismatch", "partial_failure",
         "delivery_uncertain", "profile_assignment_uncertain", "unexpected_failure"
     };
+
+    // Only these normalized result labels may enter the durable audit.
+/// Unknown RouterOS strings, raw errors and credentials are prohibited.
+    private static readonly HashSet<string> V6ObservationStates =
+        new(StringComparer.Ordinal) {
+            "not_found", "disabled", "profile_reported",
+            "profile_other", "profile_unverified"
+        };
+    private static readonly HashSet<string> V7ObservationStates =
+        new(StringComparer.Ordinal) {
+            "not_found", "disabled", "profile_active", "profile_ready",
+            "profile_used", "profile_other", "profile_missing", "profile_unverified"
+        };
 
     private readonly string _path;
 
@@ -71,6 +94,16 @@ public sealed class VoucherDeliveryJournal
             );
             CREATE INDEX IF NOT EXISTS ix_voucher_delivery_recent
                 ON voucher_delivery_audit(id DESC);
+            CREATE TABLE IF NOT EXISTS voucher_delivery_checks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                attempt_id INTEGER NOT NULL
+                    REFERENCES voucher_delivery_audit(id),
+                observed_utc TEXT NOT NULL,
+                version INTEGER NOT NULL CHECK(version IN (6,7)),
+                counts_json TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_voucher_delivery_checks_attempt
+                ON voucher_delivery_checks(attempt_id,id DESC);
             """;
         command.ExecuteNonQuery();
     }
@@ -202,6 +235,115 @@ public sealed class VoucherDeliveryJournal
                 reader.GetInt32(6), reader.GetInt32(7), reader.GetString(8),
                 reader.GetString(9)));
         return rows;
+    }
+
+
+    /// <summary>
+    /// Raw attempt metadata. Callers MUST verify RouterIdentity and
+    /// RouterEndpoint against the live session before any router read.
+    /// </summary>
+    public VoucherDeliveryAuditEntry? GetAttempt(long attemptId)
+    {
+        if (attemptId <= 0) return null;
+        using var db = Open(readOnly: true);
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            SELECT id,created_utc,router_identity,router_endpoint,
+                   service,profile,attempted,added,state,reason
+            FROM voucher_delivery_audit WHERE id=$id
+            """;
+        cmd.Parameters.AddWithValue("$id", attemptId);
+        using var reader = cmd.ExecuteReader();
+        return reader.Read() ? new VoucherDeliveryAuditEntry(
+            reader.GetInt64(0), reader.GetString(1), reader.GetString(2),
+            reader.GetString(3), reader.GetString(4), reader.GetString(5),
+            reader.GetInt32(6), reader.GetInt32(7), reader.GetString(8),
+            reader.GetString(9)) : null;
+    }
+
+    /// <summary>
+    /// Atomically append a factual observation only to an unresolved
+    /// User Manager attempt for this exact router and batch size.
+    /// Never alter the immutable upload outcome.
+    /// </summary>
+    public VoucherDeliveryCheck AppendVerification(
+        long attemptId, string routerIdentity, string routerEndpoint,
+        int version, IReadOnlyDictionary<string, int> counts)
+    {
+        if (attemptId <= 0) throw new ArgumentOutOfRangeException(nameof(attemptId));
+        if (!Valid(routerIdentity, 160) || !Valid(routerEndpoint, 256))
+            throw new ArgumentException("هوية الراوتر غير صالحة.");
+        ArgumentNullException.ThrowIfNull(counts);
+        if (version is not (6 or 7) || counts.Count == 0)
+            throw new ArgumentException("إصدار User Manager أو ملخص النتائج غير صالح.");
+
+        var allowed = version == 6 ? V6ObservationStates : V7ObservationStates;
+        long total = 0;
+        foreach (var item in counts)
+        {
+            if (!allowed.Contains(item.Key) || item.Value < 0)
+                throw new ArgumentException("الملخص يحتوي نتائج غير مسموح بحفظها.",
+                    nameof(counts));
+            total += item.Value;
+        }
+        if (total is < 1 or > 5000)
+            throw new ArgumentException("عدد نتائج الفحص غير صالح.", nameof(counts));
+        string payload = JsonSerializer.Serialize(counts);
+
+        using var db = Open();
+        using var command = db.CreateCommand();
+        command.CommandText = """
+            INSERT INTO voucher_delivery_checks(
+                attempt_id,observed_utc,version,counts_json)
+            SELECT id,$time,$version,$summary
+            FROM voucher_delivery_audit
+            WHERE id=$id AND router_identity=$identity
+              AND router_endpoint=$endpoint
+              AND service='userman' AND attempted=$count
+              AND state IN ('started','dispatching','partial','uncertain')
+            """;
+        command.Parameters.AddWithValue("$id", attemptId);
+        command.Parameters.AddWithValue("$identity", routerIdentity);
+        command.Parameters.AddWithValue("$endpoint", routerEndpoint);
+        command.Parameters.AddWithValue("$count", total);
+        command.Parameters.AddWithValue("$time",
+            DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$version", version);
+        command.Parameters.AddWithValue("$summary", payload);
+        if (command.ExecuteNonQuery() != 1)
+            throw new InvalidOperationException(
+                "محاولة الرفع لا تتطابق مع الراوتر أو العدد أو ليست غير محسومة.");
+        command.CommandText = "SELECT last_insert_rowid()";
+        long id = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+        return new VoucherDeliveryCheck(id, attemptId,
+            (string)command.Parameters["$time"].Value,
+            version, new Dictionary<string, int>(counts, StringComparer.Ordinal));
+    }
+
+    public IReadOnlyList<VoucherDeliveryCheck> ReadChecks(long attemptId, int limit = 30)
+    {
+        if (attemptId <= 0) throw new ArgumentOutOfRangeException(nameof(attemptId));
+        if (limit is < 1 or > 200) throw new ArgumentOutOfRangeException(nameof(limit));
+        using var db = Open(readOnly: true);
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            SELECT id,attempt_id,observed_utc,version,counts_json
+            FROM voucher_delivery_checks
+            WHERE attempt_id=$id ORDER BY id DESC LIMIT $limit
+            """;
+        cmd.Parameters.AddWithValue("$id", attemptId);
+        cmd.Parameters.AddWithValue("$limit", limit);
+        using var reader = cmd.ExecuteReader();
+        var checks = new List<VoucherDeliveryCheck>();
+        while (reader.Read())
+        {
+            var counts = JsonSerializer.Deserialize<Dictionary<string, int>>(
+                reader.GetString(4)) ?? new Dictionary<string, int>();
+            checks.Add(new VoucherDeliveryCheck(
+                reader.GetInt64(0), reader.GetInt64(1), reader.GetString(2),
+                reader.GetInt32(3), counts));
+        }
+        return checks;
     }
 
     private SqliteConnection Open(bool readOnly = false)
