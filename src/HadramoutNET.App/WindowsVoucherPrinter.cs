@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Markup;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using HadramoutNET.Core.Cards;
 using HadramoutNET.Core.Printing;
@@ -28,6 +29,7 @@ internal static class WindowsVoucherPrinter
     {
         ArgumentNullException.ThrowIfNull(owner);
         NativePrintJobContract contract = NativePrintJobContract.Create(cards, options);
+        CardArtPresetCodec.Validate(artwork ?? new CardArtOptions());
         FixedDocument document = BuildDocument(cards, contract, artwork);
 
         var dialog = new PrintDialog();
@@ -111,6 +113,7 @@ internal static class WindowsVoucherPrinter
         if (cards.Count == 0)
             throw new PrintLayoutException("أنشئ مسودة كروت قبل معاينة الورقة.");
         options ??= new PrintLayoutOptions();
+        CardArtPresetCodec.Validate(artwork ?? new CardArtOptions());
 
         // Validate the entire batch first, not just the visible first sheet.
         PrintLayouts.ValidateUsernames(cards.Select(x => x.Username));
@@ -195,6 +198,7 @@ internal static class WindowsVoucherPrinter
         CardArtOptions? artwork = null)
     {
         var pages = new List<FixedPage>();
+        Brush? background = LoadBackground(artwork);
         long pageNumber = 0;
         FixedPage? fixedPage = null;
         foreach (PrintPlacement placement in contract.Placements)
@@ -214,7 +218,7 @@ internal static class WindowsVoucherPrinter
             FrameworkElement card = RenderCard(
                 cards[placement.CardIndex],
                 contract.Geometry.CardWidth * DipPerPoint,
-                contract.Geometry.CardHeight * DipPerPoint, artwork);
+                contract.Geometry.CardHeight * DipPerPoint, artwork, background);
             FixedPage.SetLeft(card, placement.X * DipPerPoint);
             FixedPage.SetTop(card,
                 (contract.Geometry.PageHeight - placement.Y -
@@ -226,8 +230,45 @@ internal static class WindowsVoucherPrinter
         return pages;
     }
 
+    private static Brush? LoadBackground(CardArtOptions? artwork)
+    {
+        CardBackgroundPng? asset = CardBackgroundAsset.Decode(artwork?.BackgroundData);
+        if (asset is null) return null;
+        using var stream = new MemoryStream(asset.Png, writable: false);
+        var bitmap = new BitmapImage();
+        bitmap.BeginInit();
+        bitmap.CacheOption = BitmapCacheOption.OnLoad;
+        bitmap.StreamSource = stream;
+        bitmap.EndInit();
+        bitmap.Freeze();
+        var brush = new ImageBrush(bitmap)
+        {
+            Stretch = artwork!.BackgroundMode switch
+            {
+                "fit" => Stretch.Uniform,
+                "fill" => Stretch.UniformToFill,
+                "tile" => Stretch.Fill,
+                _ => Stretch.Fill
+            },
+            AlignmentX = AlignmentX.Center,
+            AlignmentY = AlignmentY.Center
+        };
+        if (artwork.BackgroundMode == "tile")
+        {
+            brush.TileMode = TileMode.Tile;
+            brush.ViewportUnits = BrushMappingMode.Absolute;
+            // Matches the original 300-dpi card art reference pixel density.
+            brush.Viewport = new Rect(0, 0,
+                Math.Max(1, bitmap.PixelWidth * 96.0 / 300.0),
+                Math.Max(1, bitmap.PixelHeight * 96.0 / 300.0));
+        }
+        brush.Freeze();
+        return brush;
+    }
+
     private static FrameworkElement RenderCard(
-        Voucher voucher, double width, double height, CardArtOptions? artwork)
+        Voucher voucher, double width, double height, CardArtOptions? artwork,
+        Brush? background)
     {
         const double dipPerMm = 96.0 / 25.4;
         CardArtScene art = CardArtwork.Create(voucher,
@@ -239,7 +280,7 @@ internal static class WindowsVoucherPrinter
         canvas.Children.Add(new Rectangle
         {
             Width = width, Height = height,
-            Fill = ColorBrush(art.Background)
+            Fill = background ?? ColorBrush(art.Background)
         });
         canvas.Children.Add(new Rectangle
         {
@@ -296,7 +337,7 @@ internal static class WindowsVoucherPrinter
         return new Border
         {
             Width = width, Height = height,
-            Background = ColorBrush(art.Background),
+            Background = background ?? ColorBrush(art.Background),
             BorderBrush = ColorBrush(art.Border),
             BorderThickness = new Thickness(0.6),
             Child = canvas,
