@@ -24,7 +24,7 @@ yet a complete recreation of all the original Python program's services.
 - Hotspot users: read-only table with name, profile, disabled, limits.
   Passwords are not requested from RouterOS.
 - Create cards: secure local username/password draft generation,
-  Excel, CSV and guarded .rsc exports. A separate explicit button permits
+  Excel, CSV, genuine PDF card sheets and guarded .rsc exports. A separate explicit button permits
   **confirmed Hotspot or PPP publication**, preflight-reading only live usernames
   and profiles. Duplicates or unknown profiles refuse the batch before writes.
   Per-card RouterOS traps stop delivery and uncertain transport responses
