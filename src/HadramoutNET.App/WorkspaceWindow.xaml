@@ -222,6 +222,37 @@
                                     <ComboBoxItem Content="بدون أصفار" Tag="plain"/>
                                 </ComboBox>
                             </StackPanel>
+                            <StackPanel Margin="5">
+                                <TextBlock Text="السعر"/>
+                                <TextBox x:Name="CardPriceBox" Width="100" Text="10.5"/>
+                            </StackPanel>
+                            <StackPanel Margin="5">
+                                <TextBlock Text="السعة"/>
+                                <TextBox x:Name="CardCapacityBox" Width="100" Text="512"/>
+                            </StackPanel>
+                            <StackPanel Margin="5">
+                                <TextBlock Text="وحدة السعة"/>
+                                <ComboBox x:Name="CapacityUnitCombo" Width="100" Height="35"
+                                          SelectedIndex="2">
+                                    <ComboBoxItem Content="B" Tag="B"/>
+                                    <ComboBoxItem Content="KB" Tag="KB"/>
+                                    <ComboBoxItem Content="MB" Tag="MB"/>
+                                    <ComboBoxItem Content="GB" Tag="GB"/>
+                                    <ComboBoxItem Content="TB" Tag="TB"/>
+                                </ComboBox>
+                            </StackPanel>
+                            <StackPanel Margin="5">
+                                <TextBlock Text="مدة الساعات"/>
+                                <TextBox x:Name="CardHoursBox" Width="95" Text="1"/>
+                            </StackPanel>
+                            <StackPanel Margin="5">
+                                <TextBlock Text="مدة الدقائق"/>
+                                <TextBox x:Name="CardMinutesBox" Width="95" Text="0"/>
+                            </StackPanel>
+                            <StackPanel Margin="5">
+                                <TextBlock Text="الصلاحية بالأيام"/>
+                                <TextBox x:Name="CardValidityBox" Width="100" Text="7"/>
+                            </StackPanel>
                         </WrapPanel>
                         <DataGrid x:Name="CardGrid" Grid.Row="2"
                                   AutoGenerateColumns="False" IsReadOnly="True"
