@@ -40,6 +40,38 @@ SQLite checks enforce legal status values; one-row conditional updates
 prevent duplicate completion or backward transitions. The recent-history
 read is bounded to 500 rows at a time; UI loads 200.
 
+## Read-only reconciliation observations
+
+The operator can select one historic attempt in **سجل العمليات** and
+click **التحقق من السجل المحدد**. The program authenticates the current
+RouterOS session and verifies **both** the router identity and the exact
+endpoint against the historic record. No query is allowed on another router.
+
+Only one bounded-by-query `/ip/hotspot/active/print` or
+`/ppp/active/print` is sent with an explicit
+`.proplist=.id,user,name,address` and exact `?.id=*HEX` lookup.
+No `/remove`, reconnect, retry or maintenance mutation is emitted.
+
+A fresh observation is appended in the separate
+`maintenance_reconciliation` table, preserving the initial attempt state,
+result, timestamp and dispatch history. The latest observation and its UTC
+time appear in the operations grid, while all previous observations remain
+accessible to the database reader. Allowed observations:
+
+- `observed_present`: the exact same record ID, username and IP remain
+  visible at the moment of the check.
+- `observed_absent`: no row is now visible for the historic ID. It
+  **does not establish causality**: a timer, reconnect or independent
+  administrator may have ended the session.
+- `observed_changed`: a row with that ID has different username/IP or
+  there is an ambiguous/multiple-row response.
+- `unavailable`: the router denied the query, the network timed out,
+  or the data could not be read; never equate this with a disconnection.
+
+The original `accepted`, `rejected`, `dispatching` or `uncertain`
+state is never changed by subsequent observations. A saved observation
+is not an assertion of successful disconnect or a license/billing action.
+
 ## Test-first contracts
 
 `SessionMaintenanceJournalTests` covers separate DB enforcement,
@@ -50,7 +82,7 @@ transitions, bounded reads and exclusion of passwords/errors.
 boundary. It verifies that `started` is already durable before the
 preflight request and `dispatching` before the remote remove, that
 a missing journal blocks even the read, and that accepted, rejected
-and lost-acknowledgment outcomes are durably recorded.
+and lost-acknowledgment outcomes are durably recorded.\n\n`RouterSessionReconciliationTests` verifies the read-only TCP query,\nrouter identity/endpoint isolation, observations after restart,\npermission-denied handling and append-only history without replay.
 
 ## Safety limits that still block shipping
 
