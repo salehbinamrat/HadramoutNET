@@ -22,7 +22,8 @@ internal sealed class UserManagerVoucherStatusWindow : Window
     private int _page;
 
     public UserManagerVoucherStatusWindow(Window owner,
-        UserManagerLifecycleSnapshot snapshot, string status)
+        UserManagerLifecycleSnapshot snapshot, string status,
+        string limitsWarning = "")
     {
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -156,7 +157,9 @@ internal sealed class UserManagerVoucherStatusWindow : Window
         root.Children.Add(footer);
         var warning = new TextBlock
         {
-            Text = "عرض فقط من User Manager. انتهاء الوقت وحده لا يعني انتهاء الكرت.",
+            Text = string.IsNullOrEmpty(limitsWarning) ?
+                "عرض فقط من User Manager. انتهاء الوقت وحده لا يعني انتهاء الكرت." :
+                "تنبيه: حدود باقات User Manager 6 غير مكتملة. تحقق من صلاحيات الراوتر.",
             Foreground = new SolidColorBrush(Color.FromRgb(124, 15, 36)),
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center,
