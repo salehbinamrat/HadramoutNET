@@ -125,12 +125,24 @@ public sealed class UserManagerLifecycleReader
                 if (mapped is null)
                     return new UserManagerLifecycleReadResult("incomplete", null);
                 assignments = mapped;
-                // Original Python refuses an all-unknown state projection
-                // rather than publishing a false "zero active" snapshot.
+                // Legacy and transitional RouterOS 7 builds may silently
+                // omit dynamic "state" from a successful .proplist reply.
+                // One count-verified full read, sanitized to user/state only,
+                // is justified when EVERY projected state is unrecognized.
                 if (assignments.Count > 0 && !assignments.Any(row =>
                     IsRecognizedState(row.TryGetValue("state", out string? value) ?
                         value : "")))
-                    return new UserManagerLifecycleReadResult("incomplete", null);
+                {
+                    var full = await ReadVerifiedRows(session,
+                        "/user-manager/user-profile/print", "user,state",
+                        MaxAssignments, cancellationToken,
+                        noProjection: true).ConfigureAwait(false);
+                    if (full is null || !full.Any(row =>
+                        IsRecognizedState(row.TryGetValue("state", out string? value) ?
+                            value : "")))
+                        return new UserManagerLifecycleReadResult("incomplete", null);
+                    assignments = full;
+                }
             }
             else if (users.Count > 0 && !HasLegacyLifecycleFields(users))
             {
