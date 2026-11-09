@@ -49,6 +49,7 @@ public partial class WorkspaceWindow : Window
     private readonly CancellationTokenSource _cancel = new();
     private IReadOnlyList<Voucher> _generated = [];
     private VoucherDraftTarget? _draftTarget;
+    private VoucherDraftSettings? _draftSettings;
     private readonly RouterCardTargetCatalog _cardTargets = new();
     private bool _readingCardTargets;
     private bool _reloadingCardsPackages;
@@ -833,6 +834,7 @@ public partial class WorkspaceWindow : Window
                 metadata, DateTimeOffset.Now);
             _generated = nextDraft;
             _draftTarget = target;
+            _draftSettings = VoucherDraftSettings.Capture(options, metadata);
             _draftServer = SelectedCardServer();
             _published = false;
             _uploadAttempted = false;
@@ -868,10 +870,10 @@ public partial class WorkspaceWindow : Window
         string profile = CardProfileBox.Text.Trim();
         string customer = UmCustomerBox.Text.Trim();
         if (_draftTarget is null || !_draftTarget.Matches(service, profile, customer) ||
-            _draftServer != SelectedCardServer())
+            _draftServer != SelectedCardServer() || !DraftOptionsStillCurrent())
         {
-            CardsNotice.Text = "تغيرت الخدمة أو الباقة أو مالك User Manager بعد إنشاء المسودة. " +
-                "أنشئ مسودة جديدة للتأكد من هوية الجهة قبل الرفع.";
+            CardsNotice.Text = "تغيرت إعدادات إنشاء الكروت أو بيانات السعر والسعة أو الخدمة والباقة والسيرفر بعد التوليد. " +
+                "أنشئ مسودة جديدة قبل الرفع، حتى لا تُرسل كروت بإعدادات قديمة.";
             return;
         }
         string quotaNotice = service == "hotspot"
@@ -941,7 +943,7 @@ public partial class WorkspaceWindow : Window
     {
         if (_verifyingUmDraft || _uploading || !ConfirmCurrentAccess()) return;
         if (Choice(CardServiceCombo) != "userman" || _generated.Count == 0 ||
-            _draftTarget is null ||
+            _draftTarget is null || !DraftOptionsStillCurrent() ||
             !_draftTarget.Matches(Choice(CardServiceCombo), CardProfileBox.Text,
                 UmCustomerBox.Text))
         {
@@ -962,7 +964,7 @@ public partial class WorkspaceWindow : Window
                     profile, _cancel.Token);
             if (!IsLoaded) return;
             if (!ReferenceEquals(draft, _generated) ||
-                Choice(CardServiceCombo) != "userman" ||
+                Choice(CardServiceCombo) != "userman" || !DraftOptionsStillCurrent() ||
                 !string.Equals(profile, CardProfileBox.Text.Trim(), StringComparison.Ordinal))
             {
                 CardsNotice.Text = "تغيرت خيارات المسودة أثناء الفحص؛ النتائج ملغاة.";
@@ -1184,13 +1186,29 @@ public partial class WorkspaceWindow : Window
         Choice(CardServiceCombo) == "hotspot" ?
             (Choice(CardServerCombo) is { Length: > 0 } selected ? selected : "all") : "all";
 
+    private bool DraftOptionsStillCurrent()
+    {
+        if (_draftSettings is null) return false;
+        try
+        {
+            return _draftSettings.Matches(
+                CurrentGenerationOptions(), CurrentCardMetadataOptions());
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
     private IReadOnlyList<Voucher> CardsForOutput()
     {
+        if (_generated.Count == 0)
+            throw new CardGenerationException("أنشئ مسودة كروت قبل الطباعة أو التصدير.");
         if (_draftTarget is null || !_draftTarget.Matches(
                 Choice(CardServiceCombo), CardProfileBox.Text, UmCustomerBox.Text) ||
-            _draftServer != SelectedCardServer())
+            _draftServer != SelectedCardServer() || !DraftOptionsStillCurrent())
             throw new CardGenerationException(
-                "تغيرت الخدمة أو الباقة أو السيرفر بعد توليد المسودة؛ أنشئ مسودة جديدة قبل الطباعة أو التصدير.");
+                "تغيرت الخدمة أو الباقة أو السيرفر أو إعدادات الكمية والبيانات بعد توليد المسودة؛ أنشئ مسودة جديدة قبل الطباعة أو التصدير.");
         return VoucherBatchOutput.Select(_generated, _uploadAttempted,
             _published, _acknowledgedUsernames);
     }
