@@ -3,7 +3,8 @@ using System.Globalization;
 namespace HadramoutNET.Core.RouterOS;
 
 public sealed record UserManagerLifecycleReadResult(
-    string Status, UserManagerLifecycleSnapshot? Snapshot, bool Cached = false)
+    string Status, UserManagerLifecycleSnapshot? Snapshot,
+    bool Cached = false, bool LimitsVerified = true)
 {
     public bool Ready => Status == "ready" && Snapshot is not null;
 }
@@ -23,6 +24,7 @@ public sealed class UserManagerLifecycleReader
     private RouterAuthorizedSession? _cachedSession;
     private DateTimeOffset _cachedAt;
     private UserManagerLifecycleSnapshot? _cachedSnapshot;
+    private bool _cachedLimitsVerified = true;
 
     private const string V7Users =
         ".id,name,disabled,transfer-limit,total-download-used,total-upload-used,download-used,upload-used";
@@ -45,7 +47,8 @@ public sealed class UserManagerLifecycleReader
                 DateTimeOffset.UtcNow - _cachedAt < CacheLife &&
                 session.HasCurrentAccess)
                 return new UserManagerLifecycleReadResult(
-                    "ready", _cachedSnapshot, Cached: true);
+                    "ready", _cachedSnapshot, Cached: true,
+                    LimitsVerified: _cachedLimitsVerified);
 
             int version;
             try
@@ -78,6 +81,8 @@ public sealed class UserManagerLifecycleReader
                 return new UserManagerLifecycleReadResult("incomplete", null);
 
             IReadOnlyList<IReadOnlyDictionary<string, string>> assignments = [];
+            IReadOnlyDictionary<string, long>? legacyProfileLimits = null;
+            bool limitsVerified = true;
             if (version == 7)
             {
                 var mapped = await ReadVerifiedRows(session,
@@ -86,6 +91,12 @@ public sealed class UserManagerLifecycleReader
                 if (mapped is null)
                     return new UserManagerLifecycleReadResult("incomplete", null);
                 assignments = mapped;
+                // Original Python refuses an all-unknown state projection
+                // rather than publishing a false "zero active" snapshot.
+                if (assignments.Count > 0 && !assignments.Any(row =>
+                    IsRecognizedState(row.TryGetValue("state", out string? value) ?
+                        value : "")))
+                    return new UserManagerLifecycleReadResult("incomplete", null);
             }
             else if (users.Count > 0 && !users.Any(row =>
                      row.ContainsKey("actual-profile") ||
@@ -100,12 +111,48 @@ public sealed class UserManagerLifecycleReader
                 return new UserManagerLifecycleReadResult("incomplete", null);
             }
 
+            if (version == 6)
+            {
+                // v6 effective Transfer Limit can live on the profile's
+                // linked limitation, not on the user row itself. Fetch
+                // three small metadata tables ONCE, not one query per card.
+                try
+                {
+                    var profiles = await ReadVerifiedRows(session,
+                        "/tool/user-manager/profile/print",
+                        ".id,name", 4000, cancellationToken).ConfigureAwait(false);
+                    var limitations = await ReadVerifiedRows(session,
+                        "/tool/user-manager/profile/limitation/print",
+                        ".id,name,transfer-limit", 12000,
+                        cancellationToken).ConfigureAwait(false);
+                    var links = await ReadVerifiedRows(session,
+                        "/tool/user-manager/profile/profile-limitation/print",
+                        "profile,limitation", 25000,
+                        cancellationToken).ConfigureAwait(false);
+                    if (profiles is not null && limitations is not null && links is not null)
+                        legacyProfileLimits = UserManagerLegacyProfileLimits.Build(
+                            profiles, limitations, links);
+                    else limitsVerified = false;
+                }
+                catch (Exception ex) when (ex is RouterOsTrapException or
+                    IOException or InvalidOperationException)
+                {
+                    // A denied limitations menu must not stop reading known
+                    // direct per-card quotas. The UI explicitly warns that
+                    // missing linked limits may leave some cards unclassified.
+                    limitsVerified = false;
+                }
+            }
+
             UserManagerLifecycleSnapshot snapshot =
-                UserManagerLifecycleClassifier.Classify(version, users, assignments);
+                UserManagerLifecycleClassifier.Classify(
+                    version, users, assignments, legacyProfileLimits);
             _cachedSession = session;
             _cachedSnapshot = snapshot;
             _cachedAt = DateTimeOffset.UtcNow;
-            return new UserManagerLifecycleReadResult("ready", snapshot);
+            _cachedLimitsVerified = limitsVerified;
+            return new UserManagerLifecycleReadResult(
+                "ready", snapshot, LimitsVerified: limitsVerified);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -159,6 +206,14 @@ public sealed class UserManagerLifecycleReader
             sanitized.Add(allowed);
         }
         return sanitized;
+    }
+
+    private static bool IsRecognizedState(string? state)
+    {
+        string value = string.Join(' ', (state ?? "").Trim().ToLowerInvariant()
+            .Replace('-', ' ').Replace(',', ' ')
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        return value is "running" or "running active" or "used";
     }
 
     private static bool Unsupported(string message)
