@@ -18,6 +18,8 @@ public static class CardTemplateExchange
     private static readonly HashSet<string> KnownKeys =
         CardArtPresetCodec.ToSettings(new CardArtOptions())
             .Keys.ToHashSet(StringComparer.Ordinal);
+    private static bool IsKnown(string key) =>
+        KnownKeys.Contains(key) || CardArtPresetCodec.IsSupportedLayerStyleKey(key);
 
     public static CardTemplateImport Import(byte[] source)
     {
@@ -51,7 +53,7 @@ public static class CardTemplateExchange
 
             CardArtOptions art = CardArtPresetCodec.FromSettings(cardFields);
             var extra = cardFields
-                .Where(item => !KnownKeys.Contains(item.Key))
+                .Where(item => !IsKnown(item.Key))
                 .ToDictionary(item => item.Key, item => item.Value.Clone(),
                     StringComparer.Ordinal);
             return new CardTemplateImport(art, extra);
@@ -72,7 +74,7 @@ public static class CardTemplateExchange
             {
                 if (!key.StartsWith("card.", StringComparison.Ordinal) ||
                     key.Length > 120 || key.Any(char.IsControl) ||
-                    KnownKeys.Contains(key) || result.ContainsKey(key) ||
+                    IsKnown(key) || result.ContainsKey(key) ||
                     value.ValueKind == JsonValueKind.Undefined)
                     throw new PrintLayoutException(
                         "إعداد غير معروف يتعارض مع إعداد مدعوم في القالب.");
@@ -103,7 +105,7 @@ public static class CardTemplateExchange
     public static IReadOnlyDictionary<string, JsonElement> ExtractExtras(
         IReadOnlyDictionary<string, JsonElement> settings) =>
         settings.Where(item => item.Key.StartsWith("card.", StringComparison.Ordinal) &&
-                          !KnownKeys.Contains(item.Key))
+                          !IsKnown(item.Key))
             .ToDictionary(item => item.Key, item => item.Value.Clone(),
                 StringComparer.Ordinal);
 
