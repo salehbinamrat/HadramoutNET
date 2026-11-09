@@ -214,7 +214,7 @@ internal static class CardArtworkEditorWindow
         };
         foreach (var (label, mode) in new[] {
             ("تمديد", "stretch"), ("ملء مع القص", "fill"),
-            ("احتواء", "fit"), ("تكرار", "tile")
+            ("قص تلقائي", "crop"), ("احتواء", "fit"), ("تكرار", "tile")
         })
         {
             var item = new ComboBoxItem { Content = label, Tag = mode };
