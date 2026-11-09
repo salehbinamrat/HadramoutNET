@@ -82,7 +82,11 @@ transitions, bounded reads and exclusion of passwords/errors.
 boundary. It verifies that `started` is already durable before the
 preflight request and `dispatching` before the remote remove, that
 a missing journal blocks even the read, and that accepted, rejected
-and lost-acknowledgment outcomes are durably recorded.\n\n`RouterSessionReconciliationTests` verifies the read-only TCP query,\nrouter identity/endpoint isolation, observations after restart,\npermission-denied handling and append-only history without replay.
+and lost-acknowledgment outcomes are durably recorded.
+
+`RouterSessionReconciliationTests` verifies the read-only TCP query,
+router identity/endpoint isolation, observations after restart,
+permission-denied handling and append-only history without replay.
 
 ## Safety limits that still block shipping
 
