@@ -7,6 +7,22 @@ public sealed record RouterCardTargets(bool Available, string Reason, int UserMa
     IReadOnlyList<RouterCardProfile> Profiles, IReadOnlyList<string> Servers);
 
 /// <summary>
+/// Never replace a previously selected Hotspot server with "all" just because
+/// it disappeared from the latest router inventory. "all" is a deliberate
+/// operator selection, not a recovery default.
+/// </summary>
+public static class RouterCardServerSelection
+{
+    public static string? Retain(string? selected, IReadOnlyCollection<string> available)
+    {
+        ArgumentNullException.ThrowIfNull(available);
+        if (string.Equals(selected, "all", StringComparison.Ordinal)) return "all";
+        if (string.IsNullOrWhiteSpace(selected)) return null;
+        return available.Contains(selected, StringComparer.Ordinal) ? selected : null;
+    }
+}
+
+/// <summary>
 /// Complete, bounded and read-only profile/server discovery for voucher creation.
 /// No user lists or password fields are read.
 /// </summary>

@@ -826,6 +826,9 @@ public partial class WorkspaceWindow : Window
             VoucherCardMetadataOptions metadata = CurrentCardMetadataOptions();
             VoucherDraftTarget target = VoucherDraftTarget.Create(
                 Choice(CardServiceCombo), CardProfileBox.Text, UmCustomerBox.Text);
+            string server = SelectedCardServer();
+            if (server.Length == 0)
+                throw new CardGenerationException("سيرفر Hotspot المحدد لم يعد موجودا؛ اختر سيرفرا صريحا أو all قبل التوليد.");
 
             // This is a LOCAL draft. A remote uniqueness and profile check is
             // mandatory before actually importing it to the router.
@@ -835,7 +838,7 @@ public partial class WorkspaceWindow : Window
             _generated = nextDraft;
             _draftTarget = target;
             _draftSettings = VoucherDraftSettings.Capture(options, metadata);
-            _draftServer = SelectedCardServer();
+            _draftServer = server;
             _published = false;
             _uploadAttempted = false;
             _acknowledgedUsernames = new HashSet<string>(StringComparer.Ordinal);
@@ -1184,7 +1187,7 @@ public partial class WorkspaceWindow : Window
 
     private string SelectedCardServer() =>
         Choice(CardServiceCombo) == "hotspot" ?
-            (Choice(CardServerCombo) is { Length: > 0 } selected ? selected : "all") : "all";
+            Choice(CardServerCombo) : "all";
 
     private bool DraftOptionsStillCurrent()
     {
@@ -1426,7 +1429,10 @@ public partial class WorkspaceWindow : Window
                 CurrentCardMetadataOptions()))
                 settings[item.Key] = item.Value;
             settings["create.quantity"] = JsonSerializer.SerializeToElement(QtyBox.Text);
-            settings["create.server"] = JsonSerializer.SerializeToElement(SelectedCardServer());
+            string chosenServer = SelectedCardServer();
+            if (chosenServer.Length == 0)
+                throw new CardGenerationException("اختر سيرفر Hotspot صريحا قبل حفظ إعدادات الباقة.");
+            settings["create.server"] = JsonSerializer.SerializeToElement(chosenServer);
             var legacy = new Dictionary<string, JsonElement>
             {
                 ["create.quantity"] = JsonSerializer.SerializeToElement(QtyBox.Text),
@@ -1628,11 +1634,15 @@ public partial class WorkspaceWindow : Window
             CardServerCombo.Items.Add(new ComboBoxItem { Content = "all", Tag = "all" });
             foreach (string server in found.Servers)
                 CardServerCombo.Items.Add(new ComboBoxItem { Content = server, Tag = server });
-            CardServerCombo.SelectedIndex = 0;
-            if (currentServer != "all" && found.Servers.Contains(currentServer))
-                SelectChoice(CardServerCombo, currentServer);
-            else if (currentServer != "all")
-                CardsNotice.Text = "السيرفر السابق غير موجود؛ اختر السيرفر من قائمة MikroTik الحالية.";
+            string? retainedServer = RouterCardServerSelection.Retain(
+                currentServer, found.Servers);
+            if (retainedServer is not null)
+                SelectChoice(CardServerCombo, retainedServer);
+            else
+            {
+                CardServerCombo.SelectedIndex = -1;
+                CardsNotice.Text = "السيرفر المحفوظ لم يعد موجودا؛ اختر سيرفرا من MikroTik أو all بصورة صريحة. لم يتحول الاختيار تلقائيا إلى جميع السيرفرات.";
+            }
 
             if (service == "userman")
             {
