@@ -68,7 +68,7 @@ public static class PrintLayoutPresetCodec
         string key, double fallback)
     {
         if (!settings.TryGetValue(key, out JsonElement value)) return fallback;
-        double parsed;
+        double parsed = 0;
         bool ok = value.ValueKind switch
         {
             JsonValueKind.Number => value.TryGetDouble(out parsed),
