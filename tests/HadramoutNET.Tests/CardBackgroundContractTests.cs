@@ -13,6 +13,7 @@ public sealed class CardBackgroundContractTests
     [Theory]
     [InlineData("stretch")]
     [InlineData("fill")]
+    [InlineData("crop")]
     [InlineData("fit")]
     [InlineData("tile")]
     public void Embedded_png_and_mode_roundtrip_through_original_package_prefix(string mode)
@@ -29,6 +30,19 @@ public sealed class CardBackgroundContractTests
         Assert.Equal(2, image.Width);
         Assert.Equal(2, image.Height);
         Assert.Equal(79, image.Png.Length);
+    }
+
+    [Fact]
+    public void Fit_background_uses_original_white_letterbox_in_both_renderers()
+    {
+        var config = new CardArtOptions(BackgroundData: TinyPng,
+            BackgroundMode: "fit");
+        var scene = CardArtwork.Create(
+            new HadramoutNET.Core.Cards.Voucher("1", "123456", ""),
+            50, 19, config);
+        Assert.Equal("#FFFFFF", scene.Background);
+        Assert.Equal("fit", CardArtPresetCodec.FromSettings(
+            CardArtPresetCodec.ToSettings(config)).BackgroundMode);
     }
 
     [Fact]
