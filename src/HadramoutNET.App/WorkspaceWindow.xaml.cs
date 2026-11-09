@@ -650,6 +650,16 @@ public partial class WorkspaceWindow : Window
                             _voucherAudit.ReadChecks(item.Id, 1).FirstOrDefault();
                         checkedAt = latest is null ? "" :
                             $" | آخر فحص: {latest.ObservedUtc} ({latest.Counts.Values.Sum()} اسم)";
+                        VoucherDeliveryUserManagerStage? lastStage =
+                            _voucherAudit.ReadUserManagerStages(item.Id, 1).FirstOrDefault();
+                        if (lastStage is not null)
+                        {
+                            string phase = lastStage.Stage == "create_user" ?
+                                "إنشاء حساب" : "ربط باقة";
+                            string receipt = lastStage.State == "acknowledged" ?
+                                "إقرار API مسجل" : "نتيجة الأمر غير مؤكدة";
+                            checkedAt += $" | كرت #{lastStage.Ordinal}: {phase} ({receipt})";
+                        }
                     }
                     else
                     {
