@@ -13,5 +13,7 @@
          pinned source images are never moved or modified. -->
     <Resource Include="../../reference/python-v1.1.3/assets/dashboard_icons/*.png"
               Link="Assets/DashboardIcons/%(Filename)%(Extension)" />
+    <Resource Include="../../reference/python-v1.1.3/assets/router_banner.jpg"
+              Link="Assets/router_banner.jpg" />
   </ItemGroup>
 </Project>
