@@ -15,6 +15,21 @@ public sealed class VoucherDeliveryCoordinator(VoucherDeliveryJournal journal)
     private readonly RouterVoucherPublisher _standard = new();
     private readonly RouterUserManagerPublisher _userManager = new();
 
+    /// <summary>
+    /// All live WPF User Manager mutations use this durable, fail-closed
+    /// recorder. No card usernames, passwords or RouterOS returned IDs
+    /// are written to SQLite.
+    /// </summary>
+    private sealed class JournalUserManagerStageAudit(
+        VoucherDeliveryJournal journal, long attemptId) : IUserManagerStageAudit
+    {
+        public long Prepare(int ordinal, int version, string stage) =>
+            journal.PrepareUserManagerStage(attemptId, ordinal, version, stage);
+
+        public void Acknowledge(long stageId) =>
+            journal.AcknowledgeUserManagerStage(stageId);
+    }
+
     public async Task<VoucherPublishReport> PublishAsync(
         RouterAuthorizedSession session,
         IReadOnlyList<Voucher> vouchers,
@@ -40,7 +55,9 @@ public sealed class VoucherDeliveryCoordinator(VoucherDeliveryJournal journal)
             VoucherPublishReport result = service == "userman"
                 ? await _userManager.PublishAsync(session, vouchers,
                     new UserManagerPublishOptions(profile, Confirmed: true,
-                        Customer: customer), cancellationToken).ConfigureAwait(false)
+                        Customer: customer), cancellationToken,
+                    new JournalUserManagerStageAudit(_journal, attempt))
+                    .ConfigureAwait(false)
                 : await _standard.PublishAsync(session, vouchers,
                     new VoucherPublishOptions(service, profile, Confirmed: true),
                     cancellationToken).ConfigureAwait(false);
