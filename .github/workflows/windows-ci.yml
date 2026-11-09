@@ -90,7 +90,38 @@ jobs:
           path: TestResults/Release/**/*.trx
           if-no-files-found: ignore
 
-# No distribution packages are published while this remains an incomplete port.
-# The future production packaging workflow MUST depend on successful Windows
-# Core and Windows Release runs on the same SHA, then build and SHA256-verify:
-# win-x86 Portable and Installer, win-x64 Portable and Installer.
+  # Candidate-only packages, never a public release. The dependency graph
+  # gates packaging on SUCCESS of Windows Core and BOTH Release matrix arches
+  # on this SAME SHA. Release tests always run before these output steps.
+  windows-qa-packages:
+    name: QA Portable + Installer (${{ matrix.arch }})
+    if: github.event_name == 'pull_request'
+    needs: [windows-core, windows-release]
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+          architecture: x64
+      - name: Build two QA candidates after successful core and release tests
+        shell: pwsh
+        run: ./scripts/Build-QACandidates.ps1 -Arch ${{ matrix.arch }}
+      - name: Upload verified unsigned QA candidates (not a release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: HadramoutNET-${{ matrix.arch }}-QA-candidates
+          path: |
+            out/qa/HadramoutNET-win-${{ matrix.arch }}-Portable-QA.zip
+            out/qa/HadramoutNET-win-${{ matrix.arch }}-Installer-QA.exe
+            out/qa/HadramoutNET-win-${{ matrix.arch }}-SHA256.txt
+          if-no-files-found: error
+          retention-days: 7
+
+# QA candidates are unsigned and only for controlled acceptance tests.
+# No GitHub Release, auto-merge, or production promotion is permitted until
+# original Python functional parity and real hardware/printer acceptance.
