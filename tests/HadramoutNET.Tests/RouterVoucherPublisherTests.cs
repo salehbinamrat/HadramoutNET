@@ -203,6 +203,55 @@ public sealed class RouterVoucherPublisherTests
         await server;
     }
 
+    [Fact]
+    public async Task Ppp_secret_never_receives_unsupported_hotspot_quota_attributes()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        Task server = Task.Run(async () =>
+        {
+            using var peer = await listener.AcceptTcpClientAsync(deadline.Token);
+            using var stream = peer.GetStream();
+            await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            await Send(stream, "!done");
+            await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            await Send(stream, "!re", "=name=Verified");
+            await Send(stream, "!done");
+            var count = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("/ppp/secret/print", count);
+            Assert.Contains("=count-only=yes", count);
+            await Send(stream, "!done", "=ret=0");
+            var names = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("/ppp/secret/print", names);
+            await Send(stream, "!done");
+            var countProfiles = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("/ppp/profile/print", countProfiles);
+            await Send(stream, "!done", "=ret=1");
+            var profiles = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("/ppp/profile/print", profiles);
+            await Send(stream, "!re", "=name=weekly");
+            await Send(stream, "!done");
+            var add = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("/ppp/secret/add", add);
+            Assert.Contains("=service=pppoe", add);
+            Assert.Contains("=profile=weekly", add);
+            Assert.DoesNotContain(add, w => w.StartsWith("=limit-", StringComparison.Ordinal));
+            await Send(stream, "!done", "=ret=*B");
+        }, deadline.Token);
+
+        await using var session = await Connect(port, deadline.Token);
+        var report = await new RouterVoucherPublisher().PublishAsync(session,
+            [new Voucher("0001", "pppVoucher", "pass1",
+                LimitBytes: 10_000_000, LimitUptime: "3h20m")],
+            new VoucherPublishOptions("ppp", "weekly", Confirmed: true),
+            deadline.Token);
+        Assert.True(report.Success);
+        Assert.Equal(1, report.Added);
+        await server;
+    }
+
     [Theory]
     [InlineData(-1L, "1h")]
     [InlineData(1024L, "invalid")]
