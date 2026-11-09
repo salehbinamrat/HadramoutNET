@@ -61,6 +61,18 @@ public sealed class UserManagerLegacyProfileLimitsTests
     }
 
     [Fact]
+    public void Missing_profile_limit_metadata_must_be_disclosed_to_the_operator()
+    {
+        var verified = new UserManagerLifecycleReadResult("ready", null,
+            LimitsVerified: true);
+        var partial = new UserManagerLifecycleReadResult("ready", null,
+            LimitsVerified: false);
+        Assert.Equal("", verified.LimitsWarning);
+        Assert.Contains("حدود", partial.LimitsWarning);
+        Assert.Contains("User Manager 6", partial.LimitsWarning);
+    }
+
+    [Fact]
     public void Unknown_limit_links_and_zero_limits_are_not_expiry_proof()
     {
         var limits = UserManagerLegacyProfileLimits.Build(
