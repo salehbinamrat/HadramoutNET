@@ -36,6 +36,8 @@
                             Click="ShowLegacy_Click"/>
                     <Button Content="مدير المستخدمين 6/7" Style="{StaticResource SidebarButton}"
                             Click="ShowUserManager_Click"/>
+                    <Button Content="مراقبة الشبكة" Style="{StaticResource SidebarButton}"
+                            Click="ShowNetwork_Click"/>
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Bottom" Margin="8,8,8,18">
                     <Button Content="تسجيل الخروج" Height="42"
@@ -407,6 +409,108 @@
                                        VerticalAlignment="Center" Margin="12,0"
                                        Foreground="{StaticResource TextMuted}"/>
                         </DockPanel>
+                    </Grid>
+                </TabItem>
+                <TabItem Header="مراقبة الشبكة">
+                    <Grid Margin="12">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Margin="5,4,5,12"
+                                   TextWrapping="Wrap" FontWeight="Bold"
+                                   Foreground="{StaticResource DarkRed}"
+                                   Text="قراءة فقط من الراوتر المتصل. لا تُفصل جلسات ولا تُعطّل سيرفرات ولا يُجرى مسح للشبكة تلقائيا."/>
+                        <TabControl Grid.Row="1" FontFamily="Arial">
+                            <TabItem Header="سيرفرات Hotspot">
+                                <Grid Margin="9">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <DockPanel Margin="2,0,2,10">
+                                        <TextBlock x:Name="ServersNotice"
+                                                   Text="اضغط تحديث لعرض السيرفرات الفعلية."
+                                                   TextWrapping="Wrap" VerticalAlignment="Center"
+                                                   DockPanel.Dock="Right" Margin="4"/>
+                                        <Button Content="تحديث السيرفرات" Width="155" Height="36"
+                                                DockPanel.Dock="Left" Click="RefreshServers_Click"/>
+                                    </DockPanel>
+                                    <DataGrid Grid.Row="1" x:Name="ServersGrid" IsReadOnly="True"
+                                              AutoGenerateColumns="False" CanUserAddRows="False"
+                                              EnableRowVirtualization="True">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="اسم السيرفر" Binding="{Binding Name}" Width="*"/>
+                                            <DataGridTextColumn Header="الواجهة" Binding="{Binding Interface}" Width="*"/>
+                                            <DataGridTextColumn Header="الباقة" Binding="{Binding Profile}" Width="*"/>
+                                            <DataGridCheckBoxColumn Header="معطل" Binding="{Binding Disabled}" Width="75"/>
+                                            <DataGridCheckBoxColumn Header="غير صالح" Binding="{Binding Invalid}" Width="85"/>
+                                            <DataGridCheckBoxColumn Header="يعمل" Binding="{Binding Running}" Width="75"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </TabItem>
+                            <TabItem Header="الأجهزة المكتشفة">
+                                <Grid Margin="9">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <WrapPanel Grid.Row="0" Margin="3,0,3,8" VerticalAlignment="Center">
+                                        <Button Content="تحديث الأجهزة" Width="135" Height="36"
+                                                Margin="4" Click="RefreshNeighbors_Click"/>
+                                        <Button Content="نسخ IP/MAC المحدد" Width="165" Height="36"
+                                                Margin="4" Click="CopyNeighbor_Click"/>
+                                        <TextBlock Text="بحث:" VerticalAlignment="Center" Margin="12,0,4,0"/>
+                                        <TextBox x:Name="NeighborSearchBox" Width="190" Height="34"
+                                                 Margin="4" TextChanged="NeighborSearch_Changed"/>
+                                    </WrapPanel>
+                                    <TextBlock x:Name="NeighborsNotice" Grid.Row="1"
+                                               TextWrapping="Wrap" Margin="4,0,4,9"
+                                               Text="قراءة من قائمة اكتشاف الراوتر، دون مسح IP."/>
+                                    <DataGrid x:Name="NeighborsGrid" Grid.Row="2"
+                                              IsReadOnly="True" AutoGenerateColumns="False"
+                                              CanUserAddRows="False" EnableRowVirtualization="True"
+                                              SelectionMode="Single">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="الواجهة" Binding="{Binding Interface}" Width="130"/>
+                                            <DataGridTextColumn Header="IP" Binding="{Binding Address}" Width="*"/>
+                                            <DataGridTextColumn Header="MAC" Binding="{Binding Mac}" Width="165"/>
+                                            <DataGridTextColumn Header="الجهاز" Binding="{Binding Identity}" Width="*"/>
+                                            <DataGridTextColumn Header="المنصة" Binding="{Binding Platform}" Width="110"/>
+                                            <DataGridTextColumn Header="الإصدار" Binding="{Binding Version}" Width="110"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </TabItem>
+                            <TabItem Header="الجلسات النشطة">
+                                <Grid Margin="9">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <DockPanel Margin="2,0,2,10">
+                                        <TextBlock x:Name="SessionsNotice"
+                                                   Text="عرض جلسات Hotspot وPPPoE فقط دون فصل."
+                                                   TextWrapping="Wrap" VerticalAlignment="Center"
+                                                   DockPanel.Dock="Right" Margin="4"/>
+                                        <Button Content="تحديث الجلسات" Width="140" Height="36"
+                                                DockPanel.Dock="Left" Click="RefreshSessions_Click"/>
+                                    </DockPanel>
+                                    <DataGrid x:Name="SessionsGrid" Grid.Row="1"
+                                              IsReadOnly="True" AutoGenerateColumns="False"
+                                              CanUserAddRows="False" EnableRowVirtualization="True">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="الخدمة" Binding="{Binding Service}" Width="110"/>
+                                            <DataGridTextColumn Header="اسم المستخدم" Binding="{Binding Username}" Width="*"/>
+                                            <DataGridTextColumn Header="عنوان IP" Binding="{Binding Address}" Width="*"/>
+                                            <DataGridTextColumn Header="المعرف" Binding="{Binding Id}" Width="105"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </TabItem>
+                        </TabControl>
                     </Grid>
                 </TabItem>
             </TabControl>
