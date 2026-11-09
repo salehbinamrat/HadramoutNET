@@ -30,8 +30,14 @@ yet a complete recreation of all the original Python program's services.
   authorized session using exact property lists. A count-only preflight refuses
   unsafe neighbor (>5000) or per-service session (>2500) listings, unknown
   counts are unavailable rather than zero. Search and explicit IP/MAC copy
-  are local-only. Maintenance writes and disconnect remain disabled.
-  See `docs/NETWORK_MONITORING.md`.
+  are local-only. See `docs/NETWORK_MONITORING.md`.
+- Targeted session maintenance: user-selectable SINGLE active Hotspot or PPPoE
+  session, double-confirmed in WPF. A fresh exact-ID RouterOS read must
+  match both username and IP before an internal guarded one-ID /remove.
+  An acknowledged reply means the request was accepted, not proven offline.
+  Lost acknowledgment is reported UNCERTAIN, never retried, and clears the
+  potentially stale UI listing. No bulk disconnect or automated maintenance
+  path is enabled. Router hardware acceptance and durable audit remain open.
 - User Manager v6/v7: the pre-existing UserManagerCatalog page is retained
   (user and profile listing, permission-aware status); no parallel directory
   or duplicate UI handler was added. The separate new RouterAccountDirectory
