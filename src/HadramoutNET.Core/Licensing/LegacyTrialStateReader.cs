@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Runtime.Versioning;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -65,6 +66,7 @@ public static class LegacyTrialStateReader
             "NIDI-MIKROTIK-CARDS-TRIAL-V2|" + normalized)));
     }
 
+    [SupportedOSPlatform("windows")]
     private static string WindowsMachineFingerprint()
     {
         RegistryView view = Environment.Is64BitOperatingSystem ?
@@ -80,6 +82,7 @@ public static class LegacyTrialStateReader
         return HashTrialMachineIdentifier(guid);
     }
 
+    [SupportedOSPlatform("windows")]
     private static byte[]? ReadRegistryMirror()
     {
         try
@@ -180,6 +183,7 @@ public static class LegacyTrialStateReader
         return new LegacyTrialReadResult("ok", true, needsRepair, merged);
     }
 
+    [SupportedOSPlatform("windows")]
     private static TrialSnapshot? Decode(
         byte[] encrypted, string fingerprint, DateTimeOffset nowUtc)
     {
