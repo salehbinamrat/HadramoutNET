@@ -50,7 +50,7 @@ internal static class WindowsVoucherPrinter
             CopyCount = 1
         };
 
-        ValidationResult validation = queue.MergeAndValidatePrintTicket(
+        System.Printing.ValidationResult validation = queue.MergeAndValidatePrintTicket(
             queue.DefaultPrintTicket ?? new PrintTicket(), requested);
         PrintTicket valid = validation.ValidatedPrintTicket;
         if (valid.CopyCount != 1 ||
