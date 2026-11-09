@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Markup;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using HadramoutNET.Core.Cards;
 using HadramoutNET.Core.Printing;
 
@@ -22,11 +23,12 @@ internal static class WindowsVoucherPrinter
     internal sealed record PrintResult(bool Submitted, string Message);
 
     public static PrintResult Print(Window owner,
-        IReadOnlyList<Voucher> cards, PrintLayoutOptions? options = null)
+        IReadOnlyList<Voucher> cards, PrintLayoutOptions? options = null,
+        CardArtOptions? artwork = null)
     {
         ArgumentNullException.ThrowIfNull(owner);
         NativePrintJobContract contract = NativePrintJobContract.Create(cards, options);
-        FixedDocument document = BuildDocument(cards, contract);
+        FixedDocument document = BuildDocument(cards, contract, artwork);
 
         var dialog = new PrintDialog();
         if (dialog.ShowDialog() != true)
@@ -101,7 +103,8 @@ internal static class WindowsVoucherPrinter
     /// PrintDialog, PrintDocument, printer command bar or auto-spooling path.
     /// </summary>
     public static void Preview(Window owner,
-        IReadOnlyList<Voucher> cards, PrintLayoutOptions? options = null)
+        IReadOnlyList<Voucher> cards, PrintLayoutOptions? options = null,
+        CardArtOptions? artwork = null)
     {
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentNullException.ThrowIfNull(cards);
@@ -115,7 +118,7 @@ internal static class WindowsVoucherPrinter
         var firstSheet = cards.Take(Math.Min(plan.PerSheet, cards.Count)).ToArray();
         NativePrintJobContract contract = NativePrintJobContract.Create(firstSheet, options);
 
-        var pages = BuildPages(firstSheet, contract);
+        var pages = BuildPages(firstSheet, contract, artwork);
         var stack = new StackPanel
         {
             Background = new SolidColorBrush(Color.FromRgb(224, 224, 224)),
@@ -139,7 +142,7 @@ internal static class WindowsVoucherPrinter
         {
             Text = $"معاينة أول ورقة فقط ({firstSheet.Length} كرت). " +
                 $"إجمالي الأوراق {plan.Sheets}، وعدد صفحات الطباعة {plan.PdfPages}. " +
-                "الطباعة لم تبدأ. هذه معاينة لقالب .NET الحالي وليست مطابقة نهائية لقالب Python.",
+                "الطباعة لم تبدأ. تستخدم المعاينة نفس تصميم الطباعة المباشرة وPDF.",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(16, 12, 16, 12),
             FontWeight = FontWeights.SemiBold
@@ -170,10 +173,11 @@ internal static class WindowsVoucherPrinter
     }
 
     private static FixedDocument BuildDocument(
-        IReadOnlyList<Voucher> cards, NativePrintJobContract contract)
+        IReadOnlyList<Voucher> cards, NativePrintJobContract contract,
+        CardArtOptions? artwork = null)
     {
         var doc = new FixedDocument();
-        foreach (FixedPage page in BuildPages(cards, contract))
+        foreach (FixedPage page in BuildPages(cards, contract, artwork))
         {
             var content = new PageContent();
             ((IAddChild)content).AddChild(page);
@@ -187,7 +191,8 @@ internal static class WindowsVoucherPrinter
     // Both native printing and preview render through this one renderer.
     // Preview supplies a bounded first-sheet contract only.
     private static IReadOnlyList<FixedPage> BuildPages(
-        IReadOnlyList<Voucher> cards, NativePrintJobContract contract)
+        IReadOnlyList<Voucher> cards, NativePrintJobContract contract,
+        CardArtOptions? artwork = null)
     {
         var pages = new List<FixedPage>();
         long pageNumber = 0;
@@ -209,7 +214,7 @@ internal static class WindowsVoucherPrinter
             FrameworkElement card = RenderCard(
                 cards[placement.CardIndex],
                 contract.Geometry.CardWidth * DipPerPoint,
-                contract.Geometry.CardHeight * DipPerPoint);
+                contract.Geometry.CardHeight * DipPerPoint, artwork);
             FixedPage.SetLeft(card, placement.X * DipPerPoint);
             FixedPage.SetTop(card,
                 (contract.Geometry.PageHeight - placement.Y -
@@ -221,61 +226,82 @@ internal static class WindowsVoucherPrinter
         return pages;
     }
 
-    private static FrameworkElement RenderCard(Voucher voucher, double width, double height)
+    private static FrameworkElement RenderCard(
+        Voucher voucher, double width, double height, CardArtOptions? artwork)
     {
-        var navyReplacement = new SolidColorBrush(Color.FromRgb(125, 15, 36));
-        var cream = new SolidColorBrush(Color.FromRgb(255, 250, 241));
-        var border = new Border
+        const double dipPerMm = 96.0 / 25.4;
+        CardArtScene art = CardArtwork.Create(voucher,
+            width / dipPerMm, height / dipPerMm, artwork ?? new CardArtOptions());
+        static SolidColorBrush ColorBrush(string hex) => new(
+            (Color)ColorConverter.ConvertFromString(hex));
+
+        var canvas = new Canvas { Width = width, Height = height, ClipToBounds = true };
+        canvas.Children.Add(new Rectangle
         {
-            Width = width,
-            Height = height,
-            BorderBrush = new SolidColorBrush(Color.FromRgb(197, 159, 99)),
+            Width = width, Height = height,
+            Fill = ColorBrush(art.Background)
+        });
+        canvas.Children.Add(new Rectangle
+        {
+            Width = Math.Min(width, 1.1 * dipPerMm), Height = height,
+            Fill = ColorBrush(art.Accent)
+        });
+
+        foreach (CardArtText element in art.Texts)
+        {
+            var label = new TextBlock
+            {
+                Text = element.Value,
+                FontFamily = new FontFamily("Arial"),
+                FontWeight = element.Bold ? FontWeights.Bold : FontWeights.Normal,
+                FontSize = element.FontPt * DipPerPoint,
+                Foreground = ColorBrush(element.Color),
+                Width = element.Width * dipPerMm,
+                Height = element.Height * dipPerMm,
+                TextWrapping = TextWrapping.NoWrap,
+                TextTrimming = TextTrimming.None,
+                FlowDirection = FlowDirection.LeftToRight,
+                TextAlignment = TextAlignment.Left
+            };
+            Canvas.SetLeft(label, element.X * dipPerMm);
+            Canvas.SetTop(label, element.Y * dipPerMm);
+            canvas.Children.Add(label);
+        }
+
+        if (art.Qr is CardArtQr qr)
+        {
+            int count = qr.Modules.GetLength(0);
+            var squares = new GeometryGroup();
+            for (int row = 0; row < count; row++)
+                for (int col = 0; col < count; col++)
+                    if (qr.Modules[row, col])
+                        squares.Children.Add(new RectangleGeometry(
+                            new Rect(col, row, 1, 1)));
+            var drawing = new DrawingImage(
+                new GeometryDrawing(Brushes.Black, null, squares));
+            drawing.Freeze();
+            var image = new Image
+            {
+                Source = drawing,
+                Stretch = Stretch.Fill,
+                Width = qr.Size * dipPerMm,
+                Height = qr.Size * dipPerMm,
+                SnapsToDevicePixels = true
+            };
+            Canvas.SetLeft(image, qr.X * dipPerMm);
+            Canvas.SetTop(image, qr.Y * dipPerMm);
+            canvas.Children.Add(image);
+        }
+
+        return new Border
+        {
+            Width = width, Height = height,
+            Background = ColorBrush(art.Background),
+            BorderBrush = ColorBrush(art.Border),
             BorderThickness = new Thickness(0.6),
-            Background = cream,
-            SnapsToDevicePixels = true,
-            ClipToBounds = true
+            Child = canvas,
+            ClipToBounds = true,
+            SnapsToDevicePixels = true
         };
-        var grid = new Grid();
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(0.28, GridUnitType.Star) });
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(0.31, GridUnitType.Star) });
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(0.26, GridUnitType.Star) });
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(0.15, GridUnitType.Star) });
-
-        var heading = new Border { Background = navyReplacement };
-        var title = NewText("شبكة حضرموت", 11, Brushes.White, true);
-        heading.Child = title;
-        Grid.SetRow(heading, 0);
-        grid.Children.Add(heading);
-
-        var username = NewText(voucher.Username, 13, Brushes.Black, true);
-        Grid.SetRow(username, 1);
-        grid.Children.Add(username);
-
-        var password = NewText(voucher.Password, 12, Brushes.Black, true);
-        Grid.SetRow(password, 2);
-        grid.Children.Add(password);
-
-        var serial = NewText("#" + voucher.Sequence, 9, navyReplacement, false);
-        Grid.SetRow(serial, 3);
-        grid.Children.Add(serial);
-
-        border.Child = grid;
-        return border;
     }
-
-    private static TextBlock NewText(
-        string label, double fontSize, Brush foreground, bool bold) =>
-        new()
-        {
-            Text = label,
-            FontFamily = new FontFamily("Arial"),
-            FontWeight = bold ? FontWeights.Bold : FontWeights.Normal,
-            FontSize = fontSize,
-            TextAlignment = TextAlignment.Center,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            FlowDirection = FlowDirection.RightToLeft,
-            Foreground = foreground,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Stretch
-        };
 }
