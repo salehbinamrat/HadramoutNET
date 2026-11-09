@@ -217,6 +217,10 @@
                                     Style="{StaticResource NavyReplacementButton}"/>
                             <Button Content="سجل رفع الكروت" Width="150" Height="36"
                                     Margin="4" Click="ShowDeliveryAudit_Click"/>
+                            <Button x:Name="VerifyUmDraftButton"
+                                    Content="التحقق من المسودة (User Manager)"
+                                    Width="240" Height="36" Margin="4"
+                                    Click="VerifyUmDraft_Click"/>
                             <Button Content="Excel" Width="95" Height="36"
                                     Click="ExportExcel_Click" Margin="4"/>
                             <Button Content="PDF" Width="100" Height="36"
