@@ -14,7 +14,11 @@ public sealed class CardArtStyleParityTests
         var config = new CardArtOptions(
             ShowTitle: true, FontSize: 24, FontBold: false,
             FontColor: "#A0B0C0", UsernameColor: "#010203",
-            BorderColor: "#ABCDEF", BorderWidth: 4, BorderRadius: 8);
+            BorderColor: "#ABCDEF", BorderWidth: 4, BorderRadius: 8,
+            Positions: new Dictionary<string, CardArtPoint>
+            {
+                ["password"] = new(122, 80) // Move away from larger username glyphs.
+            });
         var scene = CardArtwork.Create(new Voucher("1", "123456", "abcdef"),
             50, 19, config);
         Assert.Equal("#ABCDEF", scene.Border);
