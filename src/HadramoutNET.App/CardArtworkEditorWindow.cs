@@ -2,6 +2,9 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.IO;
+using Microsoft.Win32;
 using HadramoutNET.Core.Printing;
 
 namespace HadramoutNET.App;
@@ -115,6 +118,92 @@ internal static class CardArtworkEditorWindow
         var qrSize = TextField(content, "حجم QR بالمليمتر",
             current.QrSizeMm.ToString("G17", CultureInfo.InvariantCulture));
 
+        string? backgroundData = current.BackgroundData;
+        content.Children.Add(new TextBlock {
+            Text = "صورة خلفية الكرت (تحفظ داخل إعدادات الباقة)",
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 10, 0, 4)
+        });
+        var backgroundStatus = new TextBlock {
+            Text = string.IsNullOrEmpty(backgroundData) ?
+                "لا توجد خلفية محددة" : "تم تحميل خلفية محفوظة",
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 3, 0, 7)
+        };
+        var bgRow = new StackPanel { Orientation = Orientation.Horizontal };
+        var chooseBackground = new Button {
+            Content = "استيراد خلفية", Height = 34, Width = 125,
+            Margin = new Thickness(3)
+        };
+        var clearBackground = new Button {
+            Content = "إزالة الخلفية", Height = 34, Width = 125,
+            Margin = new Thickness(3)
+        };
+        chooseBackground.Click += (_, _) =>
+        {
+            var picker = new OpenFileDialog {
+                Title = "اختر خلفية كرت حضرموت",
+                Filter = "صور|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp",
+                CheckFileExists = true
+            };
+            if (picker.ShowDialog(window) != true) return;
+            try
+            {
+                using var input = File.OpenRead(picker.FileName);
+                if (input.Length > CardBackgroundAsset.MaxFileBytes)
+                    throw new PrintLayoutException("صورة الخلفية أكبر من 15 ميجابايت.");
+                BitmapDecoder decoder = BitmapDecoder.Create(input,
+                    BitmapCreateOptions.PreservePixelFormat,
+                    BitmapCacheOption.OnLoad);
+                BitmapFrame frame = decoder.Frames[0];
+                if ((long)frame.PixelWidth * frame.PixelHeight >
+                    CardBackgroundAsset.MaxPixels)
+                    throw new PrintLayoutException("الخلفية أكبر من 32 مليون بكسل.");
+                var normalized = new FormatConvertedBitmap(
+                    frame, PixelFormats.Rgb24, null, 0);
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(normalized));
+                using var output = new MemoryStream();
+                encoder.Save(output);
+                string packed = Convert.ToBase64String(output.ToArray());
+                _ = CardBackgroundAsset.Decode(packed);
+                backgroundData = packed;
+                backgroundStatus.Text = "خلفية صالحة جاهزة للحفظ مع الباقة.";
+            }
+            catch (Exception ex) when (ex is IOException or InvalidOperationException
+                or NotSupportedException or PrintLayoutException or
+                System.Runtime.InteropServices.COMException)
+            {
+                backgroundStatus.Text = "فشل استيراد الصورة: " + ex.Message;
+            }
+        };
+        clearBackground.Click += (_, _) =>
+        {
+            backgroundData = null;
+            backgroundStatus.Text = "تم حذف الخلفية من تصميم هذه الجلسة.";
+        };
+        bgRow.Children.Add(chooseBackground);
+        bgRow.Children.Add(clearBackground);
+        content.Children.Add(bgRow);
+        content.Children.Add(backgroundStatus);
+
+        content.Children.Add(new TextBlock {
+            Text = "توزيع الخلفية", FontWeight = FontWeights.SemiBold
+        });
+        var backgroundMode = new ComboBox {
+            Height = 33, Margin = new Thickness(0, 4, 0, 8)
+        };
+        foreach (var (label, mode) in new[] {
+            ("تمديد", "stretch"), ("ملء مع القص", "fill"),
+            ("احتواء", "fit"), ("تكرار", "tile")
+        })
+        {
+            var item = new ComboBoxItem { Content = label, Tag = mode };
+            backgroundMode.Items.Add(item);
+            if (current.BackgroundMode == mode) backgroundMode.SelectedItem = item;
+        }
+        content.Children.Add(backgroundMode);
+
         content.Children.Add(new TextBlock
         {
             Text = "مواضع العناصر الأصلية (X وY بالنقاط المرجعية 280×130)",
@@ -185,6 +274,10 @@ internal static class CardArtworkEditorWindow
                         ?? "credentials",
                     QrLoginUrl = qrUrl.Text,
                     QrSizeMm = Read(qrSize, 1, 300),
+                    BackgroundData = backgroundData,
+                    BackgroundMode =
+                        (backgroundMode.SelectedItem as ComboBoxItem)?.Tag?.ToString() ??
+                        "stretch",
                     Positions = points
                 };
                 CardArtPresetCodec.Validate(result);
