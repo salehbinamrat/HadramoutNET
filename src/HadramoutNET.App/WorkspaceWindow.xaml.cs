@@ -41,6 +41,8 @@ public partial class WorkspaceWindow : Window
     private IReadOnlyList<Voucher> _generated = [];
     private bool _published;
     private bool _uploading;
+    private bool _verifyingUmDraft;
+    private readonly UserManagerVoucherVerifier _umDraftVerifier = new();
     private VoucherDeliveryJournal? _voucherAudit;
     private VoucherDeliveryCoordinator? _deliveryCoordinator;
     private bool _deliveryUncertain;
@@ -342,9 +344,9 @@ public partial class WorkspaceWindow : Window
 
     private void GenerateCards_Click(object sender, RoutedEventArgs e)
     {
-        if (_uploading)
+        if (_uploading || _verifyingUmDraft)
         {
-            CardsNotice.Text = "لا يمكن استبدال المسودة أثناء تنفيذ عملية رفع.";
+            CardsNotice.Text = "لا يمكن استبدال المسودة أثناء رفعها أو فحصها على الراوتر.";
             return;
         }
         if (!ConfirmCurrentAccess()) return;
@@ -377,7 +379,7 @@ public partial class WorkspaceWindow : Window
 
     private async void UploadCards_Click(object sender, RoutedEventArgs e)
     {
-        if (_uploading || !ConfirmCurrentAccess()) return;
+        if (_uploading || _verifyingUmDraft || !ConfirmCurrentAccess()) return;
         if (_generated.Count == 0 || _published || _deliveryUncertain)
         {
             CardsNotice.Text = _deliveryUncertain ?
@@ -439,6 +441,86 @@ public partial class WorkspaceWindow : Window
             if (IsLoaded) UploadCardsButton.IsEnabled = true;
         }
     }
+
+    private async void VerifyUmDraft_Click(object sender, RoutedEventArgs e)
+    {
+        if (_verifyingUmDraft || _uploading || !ConfirmCurrentAccess()) return;
+        if (Choice(CardServiceCombo) != "userman" || _generated.Count == 0)
+        {
+            CardsNotice.Text = "اختر User Manager وأنشئ مسودة كروت قبل التحقق.";
+            return;
+        }
+
+        var draft = _generated;
+        string profile = CardProfileBox.Text.Trim();
+        _verifyingUmDraft = true;
+        VerifyUmDraftButton.IsEnabled = false;
+        CardsNotice.Text = "جارٍ التحقق للقراءة فقط من أسماء المسودة وروابط الباقات على User Manager...";
+        try
+        {
+            UserManagerVoucherVerificationResult result =
+                await _umDraftVerifier.VerifyAsync(_session,
+                    draft.Select(card => card.Username).ToArray(),
+                    profile, _cancel.Token);
+            if (!IsLoaded) return;
+            if (!ReferenceEquals(draft, _generated) ||
+                Choice(CardServiceCombo) != "userman" ||
+                !string.Equals(profile, CardProfileBox.Text.Trim(), StringComparison.Ordinal))
+            {
+                CardsNotice.Text = "تغيرت خيارات المسودة أثناء الفحص؛ النتائج ملغاة.";
+                return;
+            }
+            if (!result.Available)
+            {
+                CardsNotice.Text = result.Status switch
+                {
+                    "limit_exceeded" => "عدد سجلات User Manager يتجاوز الحد الآمن للفحص.",
+                    "incomplete" => "قراءة User Manager غير مكتملة؛ لم تُعتبر أي باقة مفقودة.",
+                    "not_installed" => "User Manager غير مثبت أو لا يمكن العثور عليه.",
+                    _ => "تعذر التحقق من User Manager؛ لا يمكن الجزم بحالة الكروت."
+                };
+                return;
+            }
+
+            var grouped = result.Cards.GroupBy(card => card.State)
+                .OrderBy(group => group.Key, StringComparer.Ordinal)
+                .Select(group => DescribeUmObservation(group.Key) +
+                    ": " + group.Count().ToString(CultureInfo.InvariantCulture));
+            CardsNotice.Text = $"اكتمل فحص {result.Cards.Count} اسما (User Manager {result.Version}) — للقراءة فقط.";
+            MessageBox.Show(this,
+                string.Join("\n", grouped) +
+                "\n\nوجود الحساب أو ربط الباقة لا يثبت أن الرفع السابق هو سبب ظهورهما، " +
+                "ولا يؤكد قبول تسجيل الدخول أو استهلاك الباقة. " +
+                "لن تُرسل أي إضافات أو إعادة محاولات. النتائج تخص المسودة الموجودة حاليا فقط.",
+                "نتيجة التحقق من كروت User Manager",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
+        catch (Exception)
+        {
+            if (IsLoaded)
+                CardsNotice.Text = "فشل التحقق من المسودة؛ لم يُرسل أي أمر تعديل للراوتر.";
+        }
+        finally
+        {
+            _verifyingUmDraft = false;
+            if (IsLoaded) VerifyUmDraftButton.IsEnabled = true;
+        }
+    }
+
+    private static string DescribeUmObservation(string state) => state switch
+    {
+        "profile_active" => "رابط الباقة فعال الآن (UM7)",
+        "profile_ready" => "الباقة مرتبطة ولم تثبت فعاليتها (UM7)",
+        "profile_used" => "رابط الباقة مستخدم أو منتهي (UM7)",
+        "profile_reported" => "الباقة الحالية معلنة دون إثبات صلاحية (UM6)",
+        "profile_other" => "الملف المرتبط لا يطابق الباقة المطلوبة",
+        "profile_missing" => "المستخدم موجود دون سجل ربط باقة",
+        "profile_unverified" => "حالة الربط غير معروفة",
+        "disabled" => "حساب موجود لكنه معطل",
+        "not_found" => "اسم غير موجود في القائمة المقروءة",
+        _ => "حالة غير معروفة"
+    };
 
     private void ShowDeliveryAudit_Click(object sender, RoutedEventArgs e)
     {
