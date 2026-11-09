@@ -9,8 +9,8 @@
         FontFamily="Arial" FontSize="14"
         FlowDirection="LeftToRight"
         Background="{StaticResource WindowSand}">
-    <!-- Visual-only migration foundation; no login or licensing operation is
-         enabled until its original contract is ported and tested. -->
+    <!-- Test-only RouterOS read-only identity probe is available. Full login
+         remains gated until trial and licensing acceptance is complete. -->
     <Viewbox Stretch="Uniform" StretchDirection="DownOnly">
         <Grid Width="1248" Height="765" Background="{StaticResource WindowSand}" Margin="12">
             <Grid.ColumnDefinitions>
@@ -90,9 +90,9 @@
                                 Background="White" Padding="13,10">
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <RadioButton Content="محلي" IsChecked="True"
+                                    <RadioButton x:Name="LocalModeRadio" Content="محلي" IsChecked="True"
                                                  GroupName="connection" Margin="12,5"/>
-                                    <RadioButton Content="عن بُعد — رابط VPN"
+                                    <RadioButton x:Name="RemoteModeRadio" Content="عن بُعد — رابط VPN"
                                                  GroupName="connection" Margin="12,5"/>
                                 </StackPanel>
                                 <Grid Margin="0,12,0,6">
@@ -103,9 +103,9 @@
                                         <ColumnDefinition Width="95"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="عنوان الراوتر :" Style="{StaticResource CaptionText}"/>
-                                    <TextBox Grid.Column="1" Text="192.168.88.1" Margin="5,0,10,0"/>
+                                    <TextBox x:Name="RouterHostBox" Grid.Column="1" Text="192.168.88.1" Margin="5,0,10,0"/>
                                     <TextBlock Grid.Column="2" Text="API :" Style="{StaticResource CaptionText}"/>
-                                    <TextBox Grid.Column="3" Text="8728" Margin="5,0"/>
+                                    <TextBox x:Name="RouterPortBox" Grid.Column="3" Text="8728" Margin="5,0"/>
                                 </Grid>
                                 <Grid Margin="0,8,0,6">
                                     <Grid.ColumnDefinitions>
@@ -114,8 +114,8 @@
                                         <ColumnDefinition Width="165"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="اسم الدخول :" Style="{StaticResource CaptionText}"/>
-                                    <TextBox Grid.Column="1" Text="admin" Margin="5,0,10,0"/>
-                                    <CheckBox Grid.Column="2" Content="API-SSL"
+                                    <TextBox x:Name="RouterUsernameBox" Grid.Column="1" Text="admin" Margin="5,0,10,0"/>
+                                    <CheckBox x:Name="UseSslCheck" Grid.Column="2" Content="API-SSL"
                                               VerticalAlignment="Center"/>
                                 </Grid>
                                 <Grid Margin="0,8,0,6">
@@ -125,14 +125,14 @@
                                         <ColumnDefinition Width="165"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="كلمة المرور :" Style="{StaticResource CaptionText}"/>
-                                    <PasswordBox Grid.Column="1" Margin="5,0,10,0"/>
+                                    <PasswordBox x:Name="RouterPasswordBox" Grid.Column="1" Margin="5,0,10,0"/>
                                     <CheckBox Grid.Column="2" Content="إظهار"
                                               IsEnabled="False" VerticalAlignment="Center"/>
                                 </Grid>
                                 <DockPanel Margin="0,12,0,8">
                                     <CheckBox Content="حفظ بيانات الدخول" DockPanel.Dock="Right"
                                               IsEnabled="False"/>
-                                    <CheckBox Content="التحقق من شهادة SSL" DockPanel.Dock="Left"/>
+                                    <CheckBox x:Name="VerifySslCheck" Content="التحقق من شهادة SSL" DockPanel.Dock="Left"/>
                                 </DockPanel>
                                 <ComboBox IsEnabled="False" Height="35"
                                           Background="White"
@@ -146,10 +146,13 @@
                             </StackPanel>
                         </Border>
 
-                        <Button Content="تسجيل الدخول" Height="48" Margin="0,13,0,0"
+                        <Button x:Name="RouterProbeButton" Content="اختبار اتصال MikroTik (للقراءة فقط)"
+                                Height="36" Margin="0,8,0,0" Click="TestConnection_Click"
+                                Style="{StaticResource NavyReplacementButton}"/>
+                        <Button x:Name="RouterLoginButton" Content="تسجيل الدخول" Height="48" Margin="0,8,0,0"
                                 Style="{StaticResource NavyReplacementButton}"
                                 IsEnabled="False"/>
-                        <TextBlock Text="هذه واجهة تطوير مرئية؛ الاتصال والتراخيص مؤجلان حتى اكتمال نقل المنطق واختباراته."
+                        <TextBlock x:Name="RouterProbeStatus" Text="اختبار الاتصال للقراءة فقط؛ لا يبدأ التجربة ولا يمنح دخول البرنامج."
                                    Foreground="#A0283E" FontSize="13"
                                    TextWrapping="Wrap" TextAlignment="Center" Margin="5,9"/>
                     </StackPanel>
