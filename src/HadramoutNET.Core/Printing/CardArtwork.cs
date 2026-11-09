@@ -214,7 +214,10 @@ public static class CardArtwork
                     modules[row, col] = encoded.ModuleMatrix[row][col];
             qr = new CardArtQr(x, y, size, payload, modules);
         }
-        return new CardArtScene(widthMm, heightMm, "#FFFAF1", "#7D0F24",
+        return new CardArtScene(widthMm, heightMm,
+            !string.IsNullOrEmpty(options.BackgroundData) &&
+                options.BackgroundMode == "fit" ? "#FFFFFF" : "#FFFAF1",
+            "#7D0F24",
             options.BorderColor, texts, qr, borderWidthMm, borderRadiusMm);
     }
 
