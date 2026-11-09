@@ -30,6 +30,8 @@ public partial class WorkspaceWindow : Window
     private readonly TrialStateManager _trial;
     private readonly Stopwatch _uptime;
     private readonly RouterDashboardReader _dashboard = new();
+    private DateTimeOffset _dashboardLastReadUtc = DateTimeOffset.MinValue;
+    private bool _refreshingLifecycle;
     private readonly UserManagerLifecycleReader _voucherLifecycle = new();
     private bool _readingVoucherStatus;
     private string _currentSidebarKey = "dashboard";
@@ -128,6 +130,7 @@ public partial class WorkspaceWindow : Window
                 CardsNotice.Text = "تعذر تهيئة سجل رفع الكروت؛ أوقف البرنامج الرفع حماية من التكرار.";
             }
             ReloadPackages();
+            UpdateDashboardRecentActivity();
         }
         catch (Exception)
         {
@@ -295,6 +298,7 @@ public partial class WorkspaceWindow : Window
             }
 
             UserManagerLifecycleSnapshot snapshot = data.Snapshot!;
+            ApplyDashboardLifecycle(snapshot);
             int count = status == "expired" ? snapshot.Expired : snapshot.Active;
             WorkspaceStatus.Text =
                 $"قائمة {status}: {count:N0} من {snapshot.Total:N0} مستخدم " +
@@ -369,7 +373,24 @@ public partial class WorkspaceWindow : Window
     private void Logout_Click(object sender, RoutedEventArgs e) => Close();
 
     private void RefreshDashboard_Click(object sender, RoutedEventArgs e) =>
-        _ = LoadDashboardAsync();
+        _ = LoadDashboardAsync(force: true);
+
+    private void OpenActiveCards_Click(object sender, RoutedEventArgs e) =>
+        _ = ShowVoucherStatusAsync("active");
+
+    private void OpenExpiredCards_Click(object sender, RoutedEventArgs e) =>
+        _ = ShowVoucherStatusAsync("expired");
+
+    private void ShowDashboardSessions_Click(object sender, RoutedEventArgs e)
+    {
+        Pages.SelectedIndex = 7;
+        NetworkTabs.SelectedIndex = 3;
+        MarkSidebarSelection("monitor");
+        _ = LoadNetworkSessionsAsync();
+    }
+
+    private void RefreshDashboardLifecycle_Click(object sender, RoutedEventArgs e) =>
+        _ = RefreshDashboardLifecycleAsync(force: true);
     private void RefreshHotspot_Click(object sender, RoutedEventArgs e) =>
         _ = LoadHotspotAsync();
     private void RefreshPpp_Click(object sender, RoutedEventArgs e) =>
@@ -431,9 +452,13 @@ public partial class WorkspaceWindow : Window
         }
     }
 
-    private async Task LoadDashboardAsync()
+    private async Task LoadDashboardAsync(bool force = false)
     {
         if (_refreshing || !IsLoaded) return;
+        // The original dashboard reuses a recent fast snapshot instead of
+        // refetching resource/users counts on every navigation click.
+        if (!force && DateTimeOffset.UtcNow - _dashboardLastReadUtc <
+                TimeSpan.FromSeconds(20)) return;
         _refreshing = true;
         DashboardNotice.Text = "جارٍ تحديث البيانات من الراوتر...";
         try
@@ -443,16 +468,26 @@ public partial class WorkspaceWindow : Window
             if (!IsLoaded) return;
             CpuValue.Text = FormatPercent(data.CpuPercent);
             RamValue.Text = FormatPercent(data.MemoryPercent);
-            HotspotTotalValue.Text = FormatCount(data.HotspotUsers);
-            HotspotActiveValue.Text = FormatCount(data.HotspotActive);
-            PppActiveValue.Text = FormatCount(data.PppActive);
-            UserManagerValue.Text = FormatCount(data.UserManagerUsers);
-            RouterVersionText.Text = "إصدار RouterOS: " + data.RouterOsVersion;
-            RouterUptimeText.Text = "وقت تشغيل الراوتر: " + data.Uptime;
+            DashboardTotalCardsValue.Text = FormatCount(data.UserManagerUsers);
+            DashboardConnectedMetric connected =
+                DashboardConnectedMetric.FromSources(data.HotspotActive, data.PppActive);
+            DashboardConnectedValue.Text = connected.Display;
+            DashboardRouterName.Text = "اسم الراوتر: " + data.RouterName;
+            DashboardRouterHost.Text = "عنوان الراوتر: " + _session.Endpoint;
+            RouterVersionText.Text = "RouterOS: " + data.RouterOsVersion;
+            RouterUptimeText.Text = "وقت التشغيل: " + data.Uptime;
+            DashboardDateText.Text = DateTime.Now.ToString(
+                "yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+            DashboardLicenseText.Text = _session.HasCurrentAccess ?
+                "حالة الوصول: جلسة مصرح بها" : "حالة الوصول: يلزم إعادة التحقق";
+            DashboardHealthText.Text = data.UnavailableServices.Count == 0 &&
+                !connected.Partial ? "حالة القراءة: جميع المصادر متاحة" :
+                "حالة القراءة: بعض المصادر غير متاحة";
             DashboardNotice.Text = data.UnavailableServices.Count == 0 ?
                 "تم تحديث بيانات الشبكة بنجاح." :
                 "خدمات غير متاحة: " + string.Join("، ", data.UnavailableServices) +
-                " (ظهرت بشرطة، لا بصفر).";
+                " (لم تُعرض قيمة صفر وهمية).";
+            _dashboardLastReadUtc = DateTimeOffset.UtcNow;
         }
         catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
         catch (InvalidOperationException)
@@ -521,6 +556,81 @@ public partial class WorkspaceWindow : Window
             if (IsLoaded) PppNotice.Text = "تعذر قراءة حسابات PPPoE؛ لا تغييرات على الراوتر.";
         }
         finally { _readingPpp = false; }
+    }
+
+    private void ApplyDashboardLifecycle(UserManagerLifecycleSnapshot snapshot)
+    {
+        DashboardActiveCardsValue.Text =
+            snapshot.Active.ToString("N0", CultureInfo.InvariantCulture);
+        DashboardExpiredCardsValue.Text =
+            snapshot.Expired.ToString("N0", CultureInfo.InvariantCulture);
+        DashboardLifecycleNote.Text =
+            $"User Manager {snapshot.Version}: {snapshot.Valid:N0} صالحة لم تبدأ، " +
+            $"{snapshot.Unclassified:N0} غير مصنفة، " +
+            $"{snapshot.Disabled:N0} معطلة. التجديد والحذف غير تلقائيين.";
+    }
+
+    private async Task RefreshDashboardLifecycleAsync(bool force = false)
+    {
+        if (_refreshingLifecycle || !IsLoaded || !ConfirmCurrentAccess()) return;
+        _refreshingLifecycle = true;
+        DashboardLifecycleNote.Text =
+            "جارٍ قراءة الحالة الفعلية؛ قد تتأخر شبكات User Manager الكبيرة...";
+        try
+        {
+            UserManagerLifecycleReadResult result =
+                await _voucherLifecycle.ReadAsync(
+                    _session, _cancel.Token, force: force);
+            if (!IsLoaded) return;
+            if (!result.Ready)
+            {
+                DashboardActiveCardsValue.Text = "—";
+                DashboardExpiredCardsValue.Text = "—";
+                DashboardLifecycleNote.Text =
+                    "تعذر اكتمال القراءة الموثوقة؛ ليست النتيجة صفرا. " + result.Status;
+            }
+            else
+                ApplyDashboardLifecycle(result.Snapshot!);
+        }
+        catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
+        catch (Exception)
+        {
+            if (IsLoaded)
+            {
+                DashboardActiveCardsValue.Text = "—";
+                DashboardExpiredCardsValue.Text = "—";
+                DashboardLifecycleNote.Text =
+                    "تعذر قراءة User Manager؛ لم تُغيّر بيانات الراوتر.";
+            }
+        }
+        finally { _refreshingLifecycle = false; }
+    }
+
+    private void UpdateDashboardRecentActivity()
+    {
+        if (DashboardRecentActivity is null) return;
+        if (_voucherAudit is null)
+        {
+            DashboardRecentActivity.Text =
+                "سجل العمليات المحلية غير متاح. لم تُنفذ أي عمليات شبكة.";
+            return;
+        }
+        try
+        {
+            var recent = _voucherAudit.ReadRecent(100)
+                .Where(record => record.RouterIdentity == _session.Identity &&
+                    record.RouterEndpoint == _session.Endpoint)
+                .Take(4).ToArray();
+            DashboardRecentActivity.Text = recent.Length == 0 ?
+                "لا توجد عمليات رفع كروت محلية مسجلة لهذا الراوتر." :
+                string.Join("\n", recent.Select(record =>
+                    $"{record.CreatedAtUtc} | {record.Service}: {record.StateLabel} " +
+                    $"({record.Added}/{record.Attempted})"));
+        }
+        catch (Exception)
+        {
+            DashboardRecentActivity.Text = "تعذر عرض سجل النشاط المحلي.";
+        }
     }
 
     private static string Field(IReadOnlyDictionary<string, string> row, string key) =>
@@ -701,7 +811,13 @@ public partial class WorkspaceWindow : Window
             if (!IsLoaded) return;
             if (result.Success) _published = true;
             if (service == "userman" && (result.Success || result.Uncertain || result.Added > 0))
+            {
                 _voucherLifecycle.Invalidate();
+                DashboardActiveCardsValue.Text = "—";
+                DashboardExpiredCardsValue.Text = "—";
+                DashboardLifecycleNote.Text = "تغير مستخدمو User Manager؛ يلزم تحديث النشطة والمنتهية.";
+            }
+            UpdateDashboardRecentActivity();
             if (result.Uncertain || result.Added > 0) _deliveryUncertain = true;
             CardsNotice.Text = result.Message +
                 $" — تمت إضافة {result.Added} من {result.Attempted}.";
