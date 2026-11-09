@@ -4,6 +4,8 @@ using System.Globalization;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using HadramoutNET.Core.Cards;
 using HadramoutNET.Core.Printing;
@@ -11,6 +13,7 @@ using HadramoutNET.Core.Data;
 using HadramoutNET.Core.Exporting;
 using HadramoutNET.Core.Licensing;
 using HadramoutNET.Core.RouterOS;
+using HadramoutNET.Core.Visual;
 using Microsoft.Win32;
 
 namespace HadramoutNET.App;
@@ -27,6 +30,9 @@ public partial class WorkspaceWindow : Window
     private readonly TrialStateManager _trial;
     private readonly Stopwatch _uptime;
     private readonly RouterDashboardReader _dashboard = new();
+    private readonly UserManagerLifecycleReader _voucherLifecycle = new();
+    private bool _readingVoucherStatus;
+    private string _currentSidebarKey = "dashboard";
     private readonly RouterAccountDirectory _directory = new();
     private readonly RouterNetworkInventory _networkInventory = new();
     private readonly UserManagerDatabaseStatus _umDatabaseStatus = new();
@@ -82,6 +88,8 @@ public partial class WorkspaceWindow : Window
         _trial = trial ?? throw new ArgumentNullException(nameof(trial));
         _uptime = uptime ?? throw new ArgumentNullException(nameof(uptime));
         InitializeComponent();
+        BuildSidebarNavigation();
+        RefreshSidebarConnection();
         RouterCaption.Text = $"{session.Identity} — {session.Endpoint}";
         _heartbeat.Interval = TimeSpan.FromSeconds(20);
         _heartbeat.Tick += Heartbeat_Tick;
@@ -129,7 +137,209 @@ public partial class WorkspaceWindow : Window
         }
 
         _heartbeat.Start();
+        RefreshSidebarConnection();
         await LoadDashboardAsync();
+    }
+
+
+    /// <summary>
+    /// Builds one lightweight sidebar from Python app.py's ordered route
+    /// catalog and the pinned original icons. Navigation is never a network
+    /// scan by itself except for the destination's explicit refresh.
+    /// </summary>
+    private void BuildSidebarNavigation()
+    {
+        SidebarNavigation.Children.Clear();
+        foreach (WorkspaceSidebarRoute route in WorkspaceSidebarCatalog.Items)
+        {
+            var content = new DockPanel { LastChildFill = true };
+            var icon = new Image
+            {
+                Width = 22, Height = 22,
+                Margin = new Thickness(3, 0, 7, 0),
+                Stretch = Stretch.Uniform,
+                Source = new BitmapImage(new Uri(
+                    "pack://application:,,,/Assets/DashboardIcons/" + route.Icon,
+                    UriKind.Absolute))
+            };
+            DockPanel.SetDock(icon, Dock.Right);
+            content.Children.Add(icon);
+            content.Children.Add(new TextBlock
+            {
+                Text = route.Label,
+                TextWrapping = TextWrapping.NoWrap,
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 12,
+                FontWeight = FontWeights.Bold
+            });
+            string hint = route.Key switch
+            {
+                "activity" => "سجل العمليات المتوفر حاليا؛ بقية نشاط الشبكة قيد المطابقة.",
+                "maintenance" => "المراقبة وفصل جلسة واحدة؛ التحكم الشامل بالسيرفرات قيد المطابقة.",
+                "manage" => "عرض Hotspot، وباقي إدارة الحسابات في تبويبات العمل.",
+                _ => route.Label
+            };
+            var button = new Button
+            {
+                Tag = route.Key, Content = content,
+                Style = (Style)FindResource("SidebarButton"),
+                ToolTip = hint,
+                Height = 42, Padding = new Thickness(5, 3, 5, 3),
+                Margin = new Thickness(3, 2, 3, 2),
+                HorizontalContentAlignment = HorizontalAlignment.Stretch
+            };
+            button.Click += SidebarNavigation_Click;
+            SidebarNavigation.Children.Add(button);
+        }
+        MarkSidebarSelection("dashboard");
+    }
+
+    private void RefreshSidebarConnection()
+    {
+        if (SidebarConnectionText is null || SidebarConnectionLamp is null) return;
+        bool connected = _session.HasCurrentAccess;
+        SidebarConnectionText.Text = connected ? "متصل" : "غير متصل";
+        SidebarConnectionText.Foreground = new SolidColorBrush(connected ?
+            Color.FromRgb(207, 255, 227) : Color.FromRgb(255, 182, 189));
+        SidebarConnectionLamp.Fill = new SolidColorBrush(connected ?
+            Color.FromRgb(36, 217, 118) : Color.FromRgb(232, 75, 90));
+    }
+
+    private void MarkSidebarSelection(string key)
+    {
+        _currentSidebarKey = key;
+        foreach (Button button in SidebarNavigation.Children.OfType<Button>())
+        {
+            if (string.Equals(button.Tag as string, key, StringComparison.Ordinal))
+            {
+                button.Background = new SolidColorBrush(Color.FromRgb(105, 9, 35));
+                button.BorderBrush = new SolidColorBrush(Color.FromRgb(255, 214, 123));
+                button.BorderThickness = new Thickness(2);
+            }
+            else
+            {
+                button.ClearValue(Control.BackgroundProperty);
+                button.ClearValue(Control.BorderBrushProperty);
+                button.ClearValue(Control.BorderThicknessProperty);
+            }
+        }
+    }
+
+    private async void SidebarNavigation_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string key } ||
+            !ConfirmCurrentAccess()) return;
+        if (_uploading && key != "create")
+        {
+            WorkspaceStatus.Text =
+                "انتظر اكتمال إرسال الكروت قبل تغيير القسم.";
+            return;
+        }
+        WorkspaceSidebarRoute route = WorkspaceSidebarCatalog.Find(key);
+        if (route.LifecycleStatus.Length > 0)
+        {
+            await ShowVoucherStatusAsync(route.LifecycleStatus);
+            return;
+        }
+
+        Pages.SelectedIndex = route.PrimaryTabIndex;
+        if (route.NetworkTabIndex >= 0)
+            NetworkTabs.SelectedIndex = route.NetworkTabIndex;
+        MarkSidebarSelection(key);
+        switch (key)
+        {
+            case "dashboard":
+                await LoadDashboardAsync();
+                break;
+            case "manage":
+                await LoadHotspotAsync();
+                break;
+            case "monitor":
+                await LoadNetworkSessionsAsync();
+                break;
+            case "maintenance":
+                await LoadNetworkServersAsync();
+                break;
+            case "network":
+                await LoadNetworkNeighborsAsync();
+                break;
+            case "activity":
+                await LoadMaintenanceAuditAsync();
+                break;
+        }
+    }
+
+    private async Task ShowVoucherStatusAsync(string status)
+    {
+        if (_readingVoucherStatus || _uploading || !ConfirmCurrentAccess())
+            return;
+        _readingVoucherStatus = true;
+        string previous = _currentSidebarKey;
+        MarkSidebarSelection(status == "expired" ? "expired_cards" : "active_cards");
+        WorkspaceStatus.Text =
+            "جارٍ قراءة دورة حياة كروت User Manager دون كلمات المرور...";
+        try
+        {
+            UserManagerLifecycleReadResult data =
+                await _voucherLifecycle.ReadAsync(_session, _cancel.Token);
+            if (!IsLoaded) return;
+            if (!data.Ready)
+            {
+                WorkspaceStatus.Text =
+                    "تعذر تأكيد القراءة الكاملة للكروت. لا يجوز عرض قائمة فارغة كأنها نتيجة مؤكدة.";
+                MessageBox.Show(this, WorkspaceStatus.Text +
+                    "\nالحالة: " + data.Status,
+                    "حالة كروت User Manager", MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            UserManagerLifecycleSnapshot snapshot = data.Snapshot!;
+            int count = status == "expired" ? snapshot.Expired : snapshot.Active;
+            WorkspaceStatus.Text =
+                $"قائمة {status}: {count:N0} من {snapshot.Total:N0} مستخدم " +
+                (data.Cached ? "(لقطة مخزنة مؤقتا)" : "(قراءة جديدة)") +
+                ". لا تُنفّذ أي عمليات حذف.";
+            var window = new UserManagerVoucherStatusWindow(this, snapshot, status);
+            window.ShowDialog();
+        }
+        catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
+        catch (Exception)
+        {
+            if (IsLoaded)
+                WorkspaceStatus.Text =
+                    "تعذر تصنيف كروت User Manager؛ لم يُغيّر البرنامج أي حساب.";
+        }
+        finally
+        {
+            _readingVoucherStatus = false;
+            if (IsLoaded) MarkSidebarSelection(previous);
+        }
+    }
+
+    private void Pages_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        // Ignore routed SelectionChanged events from nested network controls.
+        if (!ReferenceEquals(e.OriginalSource, Pages) ||
+            SidebarNavigation is null || SidebarNavigation.Children.Count == 0)
+            return;
+
+        string key = Pages.SelectedIndex switch
+        {
+            0 => "dashboard",
+            1 => "create",
+            2 => "manage",
+            3 => "packages",
+            4 => "manage",
+            5 => "manage",
+            6 => "manage",
+            7 when NetworkTabs?.SelectedIndex == 4 => "activity",
+            7 when NetworkTabs?.SelectedIndex == 3 => "monitor",
+            7 when NetworkTabs?.SelectedIndex == 2 => "network",
+            7 => "maintenance",
+            _ => "dashboard"
+        };
+        MarkSidebarSelection(key);
     }
 
     private void ShowDashboard_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 0;
@@ -340,7 +550,11 @@ public partial class WorkspaceWindow : Window
             if (!_session.HasCurrentAccess && IsLoaded)
                 LockWorkspace();
         }
-        finally { _checking = false; }
+        finally
+        {
+            _checking = false;
+            if (IsLoaded) RefreshSidebarConnection();
+        }
     }
 
     private void LockWorkspace()
@@ -486,6 +700,8 @@ public partial class WorkspaceWindow : Window
                 confirmed: true, _cancel.Token);
             if (!IsLoaded) return;
             if (result.Success) _published = true;
+            if (service == "userman" && (result.Success || result.Uncertain || result.Added > 0))
+                _voucherLifecycle.Invalidate();
             if (result.Uncertain || result.Added > 0) _deliveryUncertain = true;
             CardsNotice.Text = result.Message +
                 $" — تمت إضافة {result.Added} من {result.Attempted}.";
