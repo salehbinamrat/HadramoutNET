@@ -100,6 +100,83 @@ public sealed class UserManagerLegacyLifecycleWireTests
     }
 
     [Fact]
+    public async Task V6_projection_silent_state_omission_uses_one_complete_sanitized_fallback()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        Task server = Task.Run(async () =>
+        {
+            using var peer = await listener.AcceptTcpClientAsync(deadline.Token);
+            using var stream = peer.GetStream();
+            await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            await Reply(stream, "!done");
+            await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            await Reply(stream, "!re", "=name=Router");
+            await Reply(stream, "!done");
+
+            var v7 = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("/user-manager/profile/print", v7);
+            await Reply(stream, "!trap", "=message=no such command");
+            await Reply(stream, "!done");
+            var v6 = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("/tool/user-manager/profile/print", v6);
+            await Reply(stream, "!re", "=name=weekly");
+            await Reply(stream, "!done");
+
+            // RouterOS 6 can acknowledge a .proplist read but silently omit
+            // dynamic accounting fields, even when they exist in full rows.
+            await VerifyRead(stream, "/tool/user-manager/user/print",
+                count: 1, [["=username=spent", "=name="]], deadline.Token);
+            var count = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("/tool/user-manager/user/print", count);
+            Assert.Contains("=count-only=yes", count);
+            await Reply(stream, "!done", "=ret=1");
+            var full = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("/tool/user-manager/user/print", full);
+            Assert.DoesNotContain(full, word =>
+                word.StartsWith("=.proplist=", StringComparison.Ordinal));
+            await Reply(stream, "!re", "=username=spent", "=name=",
+                "=actual-profile=weekly", "=uptime-used=1h",
+                "=transfer-limit=100", "=total-download-used=100",
+                "=password=must-never-be-saved");
+            await Reply(stream, "!done");
+
+            await VerifyRead(stream, "/tool/user-manager/profile/print",
+                count: 0, [], deadline.Token);
+            await VerifyRead(stream, "/tool/user-manager/profile/limitation/print",
+                count: 0, [], deadline.Token);
+            await VerifyRead(stream,
+                "/tool/user-manager/profile/profile-limitation/print",
+                count: 0, [], deadline.Token);
+            await AssertNoAdditionalCommands(stream);
+        }, deadline.Token);
+
+        var coordinator = RouterLoginCoordinator.CreateForTests(
+            () => new LicenseAccess("active", "Valid", "online_valid",
+                "0123456789ABCDEF0123456789ABCDEF"),
+            () => new TrialAccess("locked", "expired", "expired", 0),
+            () => new TrialAccess("locked", "expired", "expired", 0));
+        var login = await coordinator.LoginAsync(new RouterLoginRequest(
+            "127.0.0.1", port.ToString(), "tester", "pwd"),
+            new DateTimeOffset(2026, 11, 9, 11, 0, 0, TimeSpan.Zero),
+            deadline.Token);
+        Assert.True(login.Success);
+        await using var session = login.Session!;
+        var result = await new UserManagerLifecycleReader()
+            .ReadAsync(session, deadline.Token);
+        Assert.True(result.Ready);
+        Assert.Equal(1, result.Snapshot!.Expired);
+        var card = Assert.Single(result.Snapshot.Rows);
+        Assert.Equal("spent", card.Username);
+        Assert.DoesNotContain("must-never-be-saved", string.Join("|",
+            card.Username, card.Profile, card.Reason));
+        await session.DisposeAsync();
+        await server;
+    }
+
+    [Fact]
     public async Task Legacy_read_rejects_truncated_user_list_as_unknown_not_zero()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
