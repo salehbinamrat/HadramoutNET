@@ -10,39 +10,48 @@
         Loaded="WorkspaceLoaded">
     <Grid Background="{StaticResource WindowSand}" Margin="9">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="192"/>
+            <ColumnDefinition Width="235"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
         <Border Grid.Column="0" Margin="0,0,0,0"
                 Background="{StaticResource GlossyRed}" CornerRadius="8">
-            <DockPanel>
-                <StackPanel DockPanel.Dock="Top" Margin="8,16">
-                    <TextBlock Text="حضرموت" FontSize="27" FontWeight="Bold"
-                               Foreground="White" TextAlignment="Center"/>
-                    <TextBlock Text=".NET 10" FontSize="12" Foreground="#FFE2C4"
-                               TextAlignment="Center" Margin="0,0,0,18"/>
-                    <Border Height="1" Margin="9,0,9,14" Background="#D79775"/>
-                    <Button Content="الرئيسية" Style="{StaticResource SidebarButton}"
-                            Click="ShowDashboard_Click"/>
-                    <Button Content="إنشاء الكروت" Style="{StaticResource SidebarButton}"
-                            Click="ShowCards_Click"/>
-                    <Button Content="مستخدمو Hotspot" Style="{StaticResource SidebarButton}"
-                            Click="ShowHotspot_Click"/>
-                    <Button Content="الباقات" Style="{StaticResource SidebarButton}"
-                            Click="ShowPackages_Click"/>
-                    <Button Content="حسابات PPPoE" Style="{StaticResource SidebarButton}"
-                            Click="ShowPpp_Click"/>
-                    <Button Content="أرشيف حضرموت القديم" Style="{StaticResource SidebarButton}"
-                            Click="ShowLegacy_Click"/>
-                    <Button Content="مدير المستخدمين 6/7" Style="{StaticResource SidebarButton}"
-                            Click="ShowUserManager_Click"/>
-                    <Button Content="مراقبة الشبكة" Style="{StaticResource SidebarButton}"
-                            Click="ShowNetwork_Click"/>
-                </StackPanel>
-                <StackPanel DockPanel.Dock="Bottom" Margin="8,8,8,18">
-                    <Button Content="تسجيل الخروج" Height="42"
-                            Style="{StaticResource SidebarButton}" Click="Logout_Click"/>
-                </StackPanel>
+            <DockPanel LastChildFill="True">
+                <Border DockPanel.Dock="Top" Background="#99152E" Margin="7,8,7,5"
+                        BorderThickness="1" BorderBrush="#F38497" CornerRadius="6"
+                        Padding="9,6">
+                    <StackPanel>
+                        <TextBlock Text="حضرموت" FontSize="24" FontWeight="Bold"
+                                   Foreground="White" TextAlignment="Right"/>
+                        <TextBlock Text="لإدارة الشبكات وطباعة الكروت"
+                                   FontSize="12" Foreground="#FFDBE4"
+                                   TextAlignment="Right" TextWrapping="Wrap"/>
+                        <TextBlock Text=".NET 10" FontSize="11" Foreground="#FFC3D2"
+                                   TextAlignment="Right" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+                <Border DockPanel.Dock="Bottom" Background="#83112A"
+                        Margin="7,3,7,8" Padding="9,7" CornerRadius="6">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" FlowDirection="RightToLeft"
+                                    Margin="4,1,4,8">
+                            <Ellipse x:Name="SidebarConnectionLamp" Width="15" Height="15"
+                                     Fill="#E84B5A" Stroke="#F8A3AC" StrokeThickness="1"
+                                     Margin="3,2,9,2"/>
+                            <TextBlock x:Name="SidebarConnectionText" Text="غير متصل"
+                                       Foreground="#FFB6BD" FontWeight="Bold"
+                                       FontSize="14" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <Button Content="تسجيل الخروج" Height="38" Margin="3"
+                                Style="{StaticResource SidebarButton}"
+                                Click="Logout_Click"/>
+                    </StackPanel>
+                </Border>
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              Margin="6,2,6,2">
+                    <!-- Built once from the original Python 10-route catalog. -->
+                    <StackPanel x:Name="SidebarNavigation" />
+                </ScrollViewer>
             </DockPanel>
         </Border>
         <Grid Grid.Column="1" Margin="12,0,0,0">
@@ -68,6 +77,7 @@
             </Border>
 
             <TabControl x:Name="Pages" Grid.Row="1"
+                        SelectionChanged="Pages_SelectionChanged"
                         BorderBrush="{StaticResource SandBorder}"
                         Background="{StaticResource CreamPanel}"
                         FontFamily="Arial" FontSize="14">
@@ -509,7 +519,7 @@
                                    TextWrapping="Wrap" FontWeight="Bold"
                                    Foreground="{StaticResource DarkRed}"
                                    Text="عرض حالة الشبكة وقاعدة User Manager بالقراءة فقط؛ فصل جلسة واحدة متاح يدويا بعد تأكيدين، دون فصل جماعي أو تعطيل سيرفرات أو مسح تلقائي."/>
-                        <TabControl Grid.Row="1" FontFamily="Arial">
+                        <TabControl x:Name="NetworkTabs" Grid.Row="1" FontFamily="Arial">
                             <TabItem Header="سيرفرات Hotspot">
                                 <Grid Margin="9">
                                     <Grid.RowDefinitions>
