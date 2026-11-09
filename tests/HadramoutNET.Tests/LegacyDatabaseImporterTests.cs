@@ -199,4 +199,71 @@ public sealed class LegacyDatabaseImporterTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Fact]
+    public void Preview_counts_only_migratable_records_without_creating_or_modifying_target()
+    {
+        string root = NewFolder();
+        try
+        {
+            string source = Path.Combine(root, "nidi_cards.db");
+            string target = Path.Combine(root, "new", "hadramout-net.db");
+            Fixture(source);
+            byte[] sourceBefore = SHA256.HashData(File.ReadAllBytes(source));
+            var importer = new LegacyDatabaseImporter(target);
+
+            LegacyImportReport preview = importer.Preview(source);
+
+            Assert.Equal((1, 1, 1, 1, 1, 1, 2),
+                (preview.Routers, preview.Packages, preview.Batches, preview.Cards,
+                 preview.RouterPresets, preview.Activities, preview.Settings));
+            Assert.False(File.Exists(target));
+            Assert.False(Directory.Exists(Path.GetDirectoryName(target)));
+            Assert.Equal(sourceBefore, SHA256.HashData(File.ReadAllBytes(source)));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void Preview_reads_uncheckpointed_wal_cards_without_writing_to_source()
+    {
+        string root = NewFolder();
+        try
+        {
+            string source = Path.Combine(root, "nidi_cards.db");
+            string target = Path.Combine(root, "net.db");
+            Fixture(source);
+            using var live = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = source, Pooling = false }.ToString());
+            live.Open();
+            Exec(live, "PRAGMA journal_mode=WAL");
+            Exec(live, "INSERT INTO cards VALUES(12,5,'0002','wal-user','p',0,NULL,NULL,NULL,NULL,0,'2026-11-08','CREATED',0,0,NULL,NULL,NULL,'hotspot',2)");
+
+            Assert.Equal(2, new LegacyDatabaseImporter(target).Preview(source).Cards);
+            Assert.False(File.Exists(target));
+            Assert.Equal(2L, Read(source, "SELECT COUNT(*) FROM cards"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void Preview_rejects_unsupported_schema_and_same_destination_without_side_effects()
+    {
+        string root = NewFolder();
+        try
+        {
+            string source = Path.Combine(root, "nidi_cards.db");
+            string target = Path.Combine(root, "net.db");
+            Fixture(source, version: 7);
+            byte[] before = SHA256.HashData(File.ReadAllBytes(source));
+
+            Assert.Throws<InvalidOperationException>(
+                () => new LegacyDatabaseImporter(target).Preview(source));
+            Assert.Throws<InvalidOperationException>(
+                () => new LegacyDatabaseImporter(source).Preview(source));
+            Assert.False(File.Exists(target));
+            Assert.Equal(before, SHA256.HashData(File.ReadAllBytes(source)));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
 }
