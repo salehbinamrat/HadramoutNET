@@ -768,10 +768,10 @@ public partial class WorkspaceWindow : Window
         // Two explicit, manual confirmations: the action affects a live
         // customer connection and cannot be undone by a database rollback.
         if (MessageBox.Show(this,
-            "سيُقطع اتصال جلسة واحدة فقط:\\n" +
-            "الخدمة: " + selected.Service + "\\n" +
-            "المستخدم: " + selected.Username + "\\n" +
-            "عنوان IP: " + selected.Address + "\\n" +
+            "سيُقطع اتصال جلسة واحدة فقط:\n" +
+            "الخدمة: " + selected.Service + "\n" +
+            "المستخدم: " + selected.Username + "\n" +
+            "عنوان IP: " + selected.Address + "\n" +
             "لا يتم فصل جلسات أخرى أو تنفيذ أي إجراء تلقائي. هل تريد المتابعة؟",
             "التحقق من الجلسة المحددة",
             MessageBoxButton.YesNo, MessageBoxImage.Warning,
@@ -780,7 +780,7 @@ public partial class WorkspaceWindow : Window
 
         if (MessageBox.Show(this,
             "تأكيد نهائي: فصل جلسة " + selected.Username +
-            " بالمعرف " + selected.Id + "؟\\n" +
+            " بالمعرف " + selected.Id + "؟\n" +
             "سيتحقق البرنامج من هوية الجلسة على الراوتر قبل الإرسال. " +
             "إذا انقطع الاتصال أثناء التنفيذ فقد تكون النتيجة غير مؤكدة ولن يعيد الأمر تلقائيا.",
             "تأكيد فصل اتصال المشترك",
