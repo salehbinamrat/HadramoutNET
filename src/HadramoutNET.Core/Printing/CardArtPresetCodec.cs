@@ -58,6 +58,14 @@ public static class CardArtPresetCodec
                     .ToDictionary(kv => kv.Key, kv => new[] { kv.Value.X, kv.Value.Y },
                         StringComparer.Ordinal))
         };
+        if (value.LayerScales is not null)
+            foreach (var (key, multiplier) in value.LayerScales)
+                settings["card.size." + key] =
+                    JsonSerializer.SerializeToElement(multiplier);
+        if (value.LayerColors is not null)
+            foreach (var (key, color) in value.LayerColors)
+                settings["card.color." + key] =
+                    JsonSerializer.SerializeToElement(color);
         return settings;
     }
 
@@ -100,6 +108,8 @@ public static class CardArtPresetCodec
             BorderColor = ReadText(values, "card.border_color", defaultOptions.BorderColor),
             BorderWidth = ReadNumber(values, "card.border_width", defaultOptions.BorderWidth),
             BorderRadius = ReadNumber(values, "card.border_radius", defaultOptions.BorderRadius),
+            LayerScales = ReadScales(values),
+            LayerColors = ReadColors(values),
             Positions = ReadPositions(values)
         };
         Validate(options);
@@ -111,9 +121,73 @@ public static class CardArtPresetCodec
         value is { Length: 7 } && value[0] == '#' &&
         value.Skip(1).All(char.IsAsciiHexDigit);
 
+    /// <summary>Original Python renderer's text-layer overrides.</summary>
+    public static bool IsSupportedLayerStyleKey(string key)
+    {
+        if (key.StartsWith("card.size.", StringComparison.Ordinal))
+        {
+            string name = key["card.size.".Length..];
+            return name != "qr" && CardArtwork.DefaultPositions.ContainsKey(name);
+        }
+        if (key.StartsWith("card.color.", StringComparison.Ordinal))
+        {
+            string name = key["card.color.".Length..];
+            return name is not ("qr" or "username" or "password") &&
+                CardArtwork.DefaultPositions.ContainsKey(name);
+        }
+        return false;
+    }
+
+    public static void ValidateLayerStyles(CardArtOptions options)
+    {
+        if (options.LayerScales is not null)
+            foreach (var (key, factor) in options.LayerScales)
+            {
+                if (!IsSupportedLayerStyleKey("card.size." + key) ||
+                    !double.IsFinite(factor) || factor is < 0.4 or > 4.0)
+                    throw new PrintLayoutException("معامل حجم نص عنصر الكرت غير صالح.");
+            }
+        if (options.LayerColors is not null)
+            foreach (var (key, color) in options.LayerColors)
+            {
+                if (!IsSupportedLayerStyleKey("card.color." + key) ||
+                    !ValidHexColor(color))
+                    throw new PrintLayoutException("لون نص عنصر الكرت غير صالح.");
+            }
+    }
+
+    private static IReadOnlyDictionary<string, double> ReadScales(
+        IReadOnlyDictionary<string, JsonElement> values)
+    {
+        var scales = new Dictionary<string, double>(StringComparer.Ordinal);
+        foreach (string key in CardArtwork.DefaultPositions.Keys.Where(
+            k => k != "qr"))
+        {
+            string field = "card.size." + key;
+            if (values.ContainsKey(field))
+                scales[key] = ReadNumber(values, field, 1.0);
+        }
+        return scales;
+    }
+
+    private static IReadOnlyDictionary<string, string> ReadColors(
+        IReadOnlyDictionary<string, JsonElement> values)
+    {
+        var colors = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (string key in CardArtwork.DefaultPositions.Keys.Where(
+            k => k is not ("qr" or "username" or "password")))
+        {
+            string field = "card.color." + key;
+            if (values.ContainsKey(field))
+                colors[key] = ReadText(values, field, "");
+        }
+        return colors;
+    }
+
     public static void Validate(CardArtOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ValidateLayerStyles(options);
         if (!double.IsFinite(options.FontSize) ||
             options.FontSize is < 1 or > 300 ||
             !double.IsFinite(options.BorderWidth) ||
