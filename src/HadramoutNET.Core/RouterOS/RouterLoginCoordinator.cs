@@ -82,6 +82,36 @@ public sealed class RouterAuthorizedSession : IAsyncDisposable
         finally { _lock.Release(); }
     }
 
+    /// <summary>
+    /// Only trusted User Manager publisher may issue this exact two-phase
+    /// card-provisioning protocol. No generic mutation, delete or retry
+    /// endpoint is exposed to the WPF interface.
+    /// </summary>
+    internal async Task<RouterOsCommandResult> ExecuteUserManagerProvisionAsync(
+        string path, IReadOnlyDictionary<string, string> attributes,
+        CancellationToken cancellationToken = default)
+    {
+        if (path is not ("/user-manager/user/add" or
+            "/user-manager/user-profile/add" or
+            "/tool/user-manager/user/add" or
+            "/tool/user-manager/user/create-and-activate-profile"))
+            throw new InvalidOperationException("الأمر خارج نطاق إنشاء كروت مدير المستخدمين.");
+
+        RouterOsCommandGuard.Validate(path, attributes);
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!HasCurrentAccess)
+                throw new InvalidOperationException("انتهت صلاحية الجلسة؛ لن يُرسل أمر إضافة.");
+            RouterOsCommandResult result = await _api.ExecuteAsync(path, attributes,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!HasCurrentAccess)
+                throw new InvalidOperationException("انتهت الصلاحية أثناء تنفيذ العملية.");
+            return result;
+        }
+        finally { _lock.Release(); }
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _lock.WaitAsync().ConfigureAwait(false);
