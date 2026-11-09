@@ -84,6 +84,29 @@ public sealed class CardTemplateExchangeTests
     }
 
     [Fact]
+    public void Atomic_template_export_preserves_existing_file_if_validation_fails()
+    {
+        string directory = Path.Combine(Path.GetTempPath(),
+            "hnet-template-export-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            string destination = Path.Combine(directory, "design.json");
+            File.WriteAllText(destination, "original-design");
+            Assert.Throws<PrintLayoutException>(() =>
+                CardTemplateExchange.SaveFile(destination,
+                    new CardArtOptions(FontColor: "INVALID")));
+            Assert.Equal("original-design", File.ReadAllText(destination));
+            string saved = CardTemplateExchange.SaveFile(destination,
+                new CardArtOptions(Title: "شبكة حضرموت"));
+            Assert.Equal(destination, saved);
+            Assert.Equal("شبكة حضرموت", CardTemplateExchange.Import(
+                File.ReadAllBytes(destination)).Artwork.Title);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
     public void UTF8_BOM_Python_template_is_accepted_without_current_state_mutation()
     {
         byte[] payload = Encoding.UTF8.GetBytes("{\"card.title_text\":\"صالح\"}");
