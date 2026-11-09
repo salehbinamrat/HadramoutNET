@@ -92,7 +92,7 @@ public static class CardGenerationPresetCodec
         string key, int fallback, int min, int max)
     {
         if (!source.TryGetValue(key, out var value)) return fallback;
-        int parsed;
+        int parsed = 0;
         bool valid = value.ValueKind switch
         {
             JsonValueKind.Number => value.TryGetInt32(out parsed),
