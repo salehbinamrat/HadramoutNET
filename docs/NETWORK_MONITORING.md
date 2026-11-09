@@ -34,6 +34,36 @@ unknown field exclusion, disabled state and session authorization.
 `Windows Core` and `Windows Release` x86/x64 run concurrently on one
 SHA, including compilation of the WPF UI.
 
+## User Manager database health (read-only, RouterOS 6 and 7)
+
+- Ports the original Python `database_maintenance_status()` service
+  without allowing optimization, backup, restore, file writes or reboot.
+- Detects the User Manager command family with
+  `/user-manager/profile/print count-only=yes`; falls back to
+  `/tool/user-manager/profile/print count-only=yes` **only** for a
+  genuinely unsupported command. A permission denial never causes an
+  incorrect v6 fallback.
+- Reads only `db-size,free-disk-space` from the corresponding
+  `/user-manager/database/print` (v7) or
+  `/tool/user-manager/database/print` (v6) command with explicit
+  `.proplist`. Unexpected properties such as credentials, paths and
+  comments are discarded, even if a peer returns them.
+- An empty, partial, denied or malformed response is classified as
+  unavailable, not silently treated as zero free space. Raw exception
+  texts are not shown in the UI. Measurements are displayed exactly as
+  returned; no invented units or conversion.
+- Adds a **حالة قاعدة User Manager** tab inside network monitoring,
+  with explicit manual refresh and separate version, database size,
+  free space and status.
+- `UserManagerDatabaseStatusTests.cs` exercises real RouterOS TCP
+  sentences for v6/v7, permission denial, unsupported menu detection,
+  incomplete responses, field exclusions and expired sessions.
+- **CI validation pending:** the latest GitHub Actions jobs failed before
+  Windows runner assignment (zero executed steps). No pass claim can
+  be made on this milestone until both Windows Core and Windows Release
+  have run successfully on the same final SHA. Device-side acceptance
+  is separately required.
+
 ## Targeted disconnect stage (after read-only inventory)
 
 - The user explicitly selects **one** row from the current Hotspot/PPPoE
