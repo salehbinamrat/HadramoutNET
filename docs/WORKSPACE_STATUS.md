@@ -42,6 +42,20 @@ yet a complete recreation of all the original Python program's services.
   operation audit is still unimplemented.
 - Package settings: explicit local SavePackage/LoadPackage, persisted
   in HadramoutNET's own SQLite store, not Python's original database.
+- Legacy history: explicit file-picker preview of an original Python schema-v8
+  SQLite database, validated by integrity and foreign-key checks in a read-only
+  in-memory snapshot (including WAL). The preview creates no target database
+  and discloses only record counts. A SECOND explicit confirmation triggers
+  the existing one-time, transactional import into the isolated .NET store.
+  The original database is never opened for writes and no paid/trial state or
+  router credentials are imported. A paginated read-only archive shows only
+  historic usernames, batch, profile, service, status and creation date;
+  historical card passwords remain stored for migration compatibility but are
+  never requested or displayed by this archive page.
+  Imported history does NOT activate old accounts on a router or enable
+  native .NET service management. Operators must close the legacy app or
+  select a trusted snapshot before copying.
+
 - Logout: close active RouterOS socket and return to protected login.
 
 ## Not finished / release blockers
