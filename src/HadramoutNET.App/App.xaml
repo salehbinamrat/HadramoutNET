@@ -3,6 +3,14 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
+        <!-- Keep Arabic interface text RTL, but render every numeric glyph in Latin form
+             regardless of the Windows display language or native-digit settings. -->
+        <Style TargetType="Window">
+            <Setter Property="Language" Value="en-US"/>
+            <Setter Property="NumberSubstitution.CultureSource" Value="Override"/>
+            <Setter Property="NumberSubstitution.CultureOverride" Value="en-US"/>
+            <Setter Property="NumberSubstitution.Substitution" Value="European"/>
+        </Style>
         <SolidColorBrush x:Key="WindowSand" Color="#F8EBD1"/>
         <SolidColorBrush x:Key="CreamPanel" Color="#FFFBF5"/>
         <SolidColorBrush x:Key="SandBorder" Color="#D8BD88"/>
