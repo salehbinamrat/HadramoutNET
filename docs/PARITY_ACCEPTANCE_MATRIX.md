@@ -12,7 +12,7 @@ application has been ported. Statuses are evidence-scoped.
 | Source recovery and origin | Python reference files verified against Git blobs by Windows Core CI | External acceptance of original functional behavior |
 | RouterOS API login | Live API auth, current-access gating, session expiration | Physical-router acceptance under supported v6/v7 permissions |
 | Local card generation | 3 credential formats, sequence and uniqueness guards | Full original options/preview parity, large real batches |
-| Hotspot and PPP | Account publishing and read-only crash review | Router acceptance, real accounting and batch recovery |
+| Hotspot and PPP | Account publishing, read-only crash review, count-verified preflight before writes; Hotspot time/byte limits sent per voucher | Router acceptance and real accounting; PPP time/volume restrictions still depend on router profile/RADIUS, and batch recovery remains manual |
 | User Manager 6/7 | Version-specific provisioning, profile binding, per-command write-ahead intent + ACK, manual unresolved review | Real v6/v7 profile accounting and RADIUS end-to-end |
 | Delivery audit | Separate SQLite journal and append-only aggregate observations, no stored passwords/usernames | Provenance of each individual remote card after crashes (policy and implementation) |
 | Print sheet geometry | A3/A4, portrait/landscape, five orders, long/short-edge duplex, per-package persisted print settings | Printer hardware driver and physical cut/duplex calibration |
@@ -54,11 +54,14 @@ Generated card objects carry `price`, `limit_bytes`, `limit_uptime`,
 `validity_days`, and `created_at`. The shared card-art scene uses these
 individual card values for the corresponding enabled design layers, unless
 a user explicitly overrides the display text. Capacity units use binary
-1024 scaling, and uptime minutes are normalized. These fields are
-**print metadata** and do NOT silently alter the MikroTik server profile,
-RADIUS usage counters or live account restrictions. The router's actual
-policy still depends on the selected RouterOS service/profile and must
-be verified on real devices.
+1024 scaling, and uptime minutes are normalized. For **Hotspot** voucher
+creation only, the exporter now passes nonzero byte and nonempty time
+limits as `limit-bytes-total` and `limit-uptime` attributes to the RouterOS
+`/ip/hotspot/user/add` command, matching the pinned Python source.
+For **PPP and User Manager**, these printed values are NOT applied
+automatically: the real quota depends on the selected RouterOS profile,
+RADIUS and other policies and must be verified on physical routers.
+No automatic retry is permitted on an uncertain response.
 
 The upload target is now captured at the instant a local batch is generated
 and compared at send time. Any later change to service, profile or
@@ -93,3 +96,34 @@ not the original Python installation or database.
 Pending: fully implement original per-layer color and size overrides,
 all original font families and image formats, image-crop calibration
 against physical printouts, and user-approved installation acceptance.
+
+## High-priority RouterOS publication completeness fix
+
+Standard Hotspot and PPP creation previously checked projected usernames
+and profiles without verifying that the RouterOS response contained every
+row. This could yield a false 'username absent' result on a truncated list.
+The current implementation now uses `count-only=yes` followed by
+`.proplist=name` for both menus, compares row counts, refuses malformed or
+duplicate names and refuses any result exceeding 20,000 entries. Any
+count/list mismatch is a **fail-closed preflight** with zero remote add calls.
+Dedicated synthetic TCP/RouterOS protocol tests cover incomplete usernames,
+profiles, invalid counts and oversized lists on both services. This is still
+not an atomic cross-router transaction: a concurrent external account
+creation after preflight may be rejected by RouterOS and must be reconciled.
+
+For Hotspot, real `limit-uptime` and `limit-bytes-total` attributes now
+accompany each new user and malformed negative/time quota values are
+rejected before any router I/O. The PPP secret API does not support those
+same per-user Hotspot attributes; the confirmation UI explicitly warns the
+operator instead of implying a printed quota is enforced. User Manager
+profile enforcement remains subject to profile/RADIUS acceptance.
+
+## Per-layer source card-editor support
+
+Python's `card.size.<layer>` multiplication factors (0.4–4.0) and
+`card.color.<layer>` hex colors now change the same physical `CardArtwork`
+scene used by PDF and Windows printing rather than being stored only as
+unsupported JSON. The base username color intentionally controls
+the password color as in the original `render.py`. Import/export of
+recognized layer styles is roundtrip-safe; unknown original settings
+continue to be preserved and disclosed as unrendered.
