@@ -7,6 +7,10 @@ public sealed record UserManagerLifecycleReadResult(
     bool Cached = false, bool LimitsVerified = true)
 {
     public bool Ready => Status == "ready" && Snapshot is not null;
+    public string LimitsWarning => LimitsVerified ? "" :
+        "لم تكتمل قراءة حدود باقات User Manager 6؛ " +
+        "قد تكون بعض الكروت المصنفة نشطة قد استنفدت حدود باقاتها. " +
+        "تحقق من صلاحيات قراءة تعريفات الباقات والقيود على الراوتر.";
 }
 
 /// <summary>
