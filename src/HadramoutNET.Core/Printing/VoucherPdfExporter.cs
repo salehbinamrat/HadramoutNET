@@ -8,10 +8,8 @@ using HadramoutNET.Core.Exporting;
 namespace HadramoutNET.Core.Printing;
 
 /// <summary>
-/// Creates real A3/A4 card sheets with searchable, selectable voucher
-/// credentials; unlike a bitmap-only PDF, usernames/passwords remain text.
-/// Uses the already-tested Python-parity sheet placement engine. This is
-/// an initial red native card template, NOT the full original layer editor.
+/// Card PDF uses the SAME physical artwork coordinates, text and QR modules
+/// as WindowsVoucherPrinter. Output is atomic and never opens a printer.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public static class VoucherPdfExporter
@@ -21,7 +19,8 @@ public static class VoucherPdfExporter
     public static string SavePdf(
         IReadOnlyList<Voucher> cards,
         string destination,
-        PrintLayoutOptions? options = null)
+        PrintLayoutOptions? options = null,
+        CardArtOptions? artwork = null)
     {
         ArgumentNullException.ThrowIfNull(cards);
         ArgumentException.ThrowIfNullOrWhiteSpace(destination);
@@ -29,17 +28,15 @@ public static class VoucherPdfExporter
             throw new PrintLayoutException("لا توجد كروت لتصديرها.");
 
         PrintLayouts.ValidateUsernames(cards.Select(c => c.Username));
-        foreach (Voucher card in cards)
-        {
-            if (card.Username.Length > 64 ||
-                card.Password.Length > 64 ||
-                card.Username.Any(char.IsControl) ||
-                card.Password.Any(char.IsControl))
-                throw new PrintLayoutException("تحتوي الكروت على بيانات نصية غير صالحة للطباعة.");
-        }
-
         options ??= new PrintLayoutOptions();
+        artwork ??= new CardArtOptions();
         PrintSheetPlan plan = PrintLayouts.Plan(options, cards.Count);
+
+        // Preflight EVERY voucher before touching a preexisting destination.
+        // Sensitive data are never written to audit logs or exceptions.
+        foreach (Voucher card in cards)
+            _ = CardArtwork.Create(card, options.CardWidthMm,
+                options.CardHeightMm, artwork);
         PrepareArialFont();
 
         return AtomicExportFile.Write(destination, staged =>
@@ -49,14 +46,23 @@ public static class VoucherPdfExporter
             pdf.Info.Author = "Hadramout Network Cards";
             pdf.Info.Subject = "MikroTik voucher cards";
 
-            var fontName = new XFont("Arial", 8, XFontStyleEx.Bold);
-            var fontCode = new XFont("Arial", 10, XFontStyleEx.Bold);
-            var fontSmall = new XFont("Arial", 6, XFontStyleEx.Regular);
-            var red = new XSolidBrush(XColor.FromArgb(125, 15, 36));
-            var redLight = new XSolidBrush(XColor.FromArgb(194, 27, 60));
-            var cream = new XSolidBrush(XColor.FromArgb(255, 250, 241));
-            var gold = new XPen(XColor.FromArgb(197, 159, 99), 0.45);
-            var dark = new XSolidBrush(XColor.FromArgb(40, 25, 27));
+            var fonts = new Dictionary<(double Size, bool Bold), XFont>();
+            XFont GetFont(double size, bool bold)
+            {
+                var key = (size, bold);
+                if (!fonts.TryGetValue(key, out XFont? font))
+                {
+                    font = new XFont("Arial", size,
+                        bold ? XFontStyleEx.Bold : XFontStyleEx.Regular);
+                    fonts.Add(key, font);
+                }
+                return font;
+            }
+            static XColor Color(string code)
+            {
+                byte[] components = Convert.FromHexString(code.AsSpan(1));
+                return XColor.FromArgb(components[0], components[1], components[2]);
+            }
 
             XGraphics? graphics = null;
             long currentPage = 0;
@@ -73,40 +79,41 @@ public static class VoucherPdfExporter
                         graphics = XGraphics.FromPdfPage(page);
                         currentPage = placement.PdfPage;
                     }
-
-                    // PrintLayouts positions use bottom-left PDF coordinates,
-                    // while XGraphics operates top-left by default.
                     double x = placement.X;
                     double y = plan.Layout.PageHeight - placement.Y - plan.Layout.CardHeight;
-                    double width = plan.Layout.CardWidth;
-                    double height = plan.Layout.CardHeight;
+                    var art = CardArtwork.Create(cards[placement.CardIndex],
+                        options.CardWidthMm, options.CardHeightMm, artwork);
+                    const double mm = PrintLayouts.PointsPerMillimeter;
+                    double width = plan.Layout.CardWidth, height = plan.Layout.CardHeight;
+                    var bg = new XSolidBrush(Color(art.Background));
+                    var accent = new XSolidBrush(Color(art.Accent));
+                    var gold = new XPen(Color(art.Border), 0.45);
 
-                    // Deliberately simple red template until full fidelity
-                    // original customizable design/layer rendering is ported.
-                    graphics!.DrawRectangle(gold, cream, x, y, width, height);
-                    graphics.DrawRectangle(red, x, y, width, height * 0.23);
-                    graphics.DrawRectangle(redLight, x, y + height * 0.23,
-                        width, height * 0.06);
+                    graphics!.DrawRectangle(gold, bg, x, y, width, height);
+                    graphics.DrawRectangle(accent, x, y, Math.Min(width, 1.1 * mm), height);
 
-                    graphics.DrawString("HADRAMOUT NETWORK", fontName, XBrushes.White,
-                        new XRect(x + 2, y, width - 4, height * 0.23),
-                        XStringFormats.Center);
-
-                    Voucher card = cards[placement.CardIndex];
-                    graphics.DrawString(card.Username, fontCode, dark,
-                        new XRect(x + 2, y + height * 0.32,
-                            width - 4, height * (card.Password.Length == 0 ? 0.50 : 0.24)),
-                        XStringFormats.Center);
-                    if (!string.IsNullOrEmpty(card.Password))
+                    foreach (CardArtText t in art.Texts)
                     {
-                        graphics.DrawString(card.Password, fontCode, dark,
-                            new XRect(x + 2, y + height * 0.58,
-                                width - 4, height * 0.23),
-                            XStringFormats.Center);
+                        graphics.DrawString(t.Value, GetFont(t.FontPt, t.Bold),
+                            new XSolidBrush(Color(t.Color)),
+                            new XRect(x + t.X * mm, y + t.Y * mm,
+                                t.Width * mm, t.Height * mm),
+                            XStringFormats.TopLeft);
                     }
-                    graphics.DrawString("#" + card.Sequence, fontSmall, red,
-                        new XRect(x + 2, y + height * 0.83, width - 4, height * 0.12),
-                        XStringFormats.Center);
+                    if (art.Qr is CardArtQr qr)
+                    {
+                        int count = qr.Modules.GetLength(0);
+                        double module = qr.Size * mm / count;
+                        double sx = x + qr.X * mm, sy = y + qr.Y * mm;
+                        graphics.DrawRectangle(XBrushes.White, sx, sy,
+                            qr.Size * mm, qr.Size * mm);
+                        for (int row = 0; row < count; row++)
+                            for (int col = 0; col < count; col++)
+                                if (qr.Modules[row, col])
+                                    graphics.DrawRectangle(XBrushes.Black,
+                                        sx + col * module, sy + row * module,
+                                        module + 0.005, module + 0.005);
+                    }
                 }
             }
             finally
