@@ -36,6 +36,11 @@ public static class CardArtPresetCodec
             ["card.phone_text"] = JsonSerializer.SerializeToElement(value.Phone),
             ["card.other_text"] = JsonSerializer.SerializeToElement(value.Other),
             ["card.other2_text"] = JsonSerializer.SerializeToElement(value.Other2),
+            ["card.price_text"] = JsonSerializer.SerializeToElement(value.Price),
+            ["card.capacity_text"] = JsonSerializer.SerializeToElement(value.Capacity),
+            ["card.duration_text"] = JsonSerializer.SerializeToElement(value.Duration),
+            ["card.validity_text"] = JsonSerializer.SerializeToElement(value.Validity),
+            ["card.date_text"] = JsonSerializer.SerializeToElement(value.Date),
             ["card.qr_mode"] = JsonSerializer.SerializeToElement(value.QrMode),
             ["card.qr_login_url"] = JsonSerializer.SerializeToElement(value.QrLoginUrl),
             ["card.qr_size_mm"] = JsonSerializer.SerializeToElement(value.QrSizeMm),
@@ -71,6 +76,11 @@ public static class CardArtPresetCodec
             Phone = ReadText(values, "card.phone_text", defaultOptions.Phone),
             Other = ReadText(values, "card.other_text", defaultOptions.Other),
             Other2 = ReadText(values, "card.other2_text", defaultOptions.Other2),
+            Price = ReadText(values, "card.price_text", defaultOptions.Price),
+            Capacity = ReadText(values, "card.capacity_text", defaultOptions.Capacity),
+            Duration = ReadText(values, "card.duration_text", defaultOptions.Duration),
+            Validity = ReadText(values, "card.validity_text", defaultOptions.Validity),
+            Date = ReadText(values, "card.date_text", defaultOptions.Date),
             QrMode = ReadText(values, "card.qr_mode", defaultOptions.QrMode),
             QrLoginUrl = ReadText(values, "card.qr_login_url", defaultOptions.QrLoginUrl),
             QrSizeMm = ReadNumber(values, "card.qr_size_mm", defaultOptions.QrSizeMm),
@@ -98,7 +108,9 @@ public static class CardArtPresetCodec
                 uri.Scheme is not ("http" or "https")))
             throw new PrintLayoutException("رابط QR غير صالح.");
         foreach (string value in new[] {
-            options.Title, options.Phone, options.Other, options.Other2 })
+            options.Title, options.Phone, options.Other, options.Other2,
+            options.Price, options.Capacity, options.Duration,
+            options.Validity, options.Date })
         {
             if (value is null || value.Length > 200 || value.Any(char.IsControl))
                 throw new PrintLayoutException("نص تصميم الكرت غير صالح.");
