@@ -75,7 +75,7 @@ public sealed class VoucherDeliveryJournal
     private static readonly HashSet<string> StandardStates =
         new(StringComparer.Ordinal)
         {
-            "not_found", "disabled", "profile_matches",
+            "not_found", "disabled", "disabled_unknown", "profile_matches",
             "profile_other", "profile_unknown", "service_other"
         };
 
