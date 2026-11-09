@@ -42,6 +42,12 @@ public partial class WorkspaceWindow : Window
     private bool _checking;
     private bool _refreshing;
     private bool _readingPpp;
+    private bool _legacyBusy;
+    private bool _legacyReading;
+    private string? _legacySource;
+    private LegacyImportReport? _legacyPreview;
+    private int _legacyOffset;
+    private const int LegacyPageSize = 100;
 
     private sealed record HotspotRow(
         string Name, string Profile, string Disabled, string LimitUptime, string LimitBytes);
@@ -86,6 +92,11 @@ public partial class WorkspaceWindow : Window
         _ = LoadPppAsync();
     }
     private void ShowUserManager_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 4;
+    private void ShowLegacy_Click(object sender, RoutedEventArgs e)
+    {
+        Pages.SelectedIndex = 6;
+        _ = LoadLegacyHistoryAsync();
+    }
     private void RefreshUserManager_Click(object sender, RoutedEventArgs e) =>
         _ = LoadUserManagerAsync();
     private void Logout_Click(object sender, RoutedEventArgs e) => Close();
@@ -569,6 +580,156 @@ public partial class WorkspaceWindow : Window
                 combo.SelectedItem = item;
                 return;
             }
+    }
+
+
+    private string LegacyNetDatabasePath() => PackageSettingsStore.DefaultPath(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
+
+    private async void PreviewLegacy_Click(object sender, RoutedEventArgs e)
+    {
+        if (_legacyBusy || !ConfirmCurrentAccess()) return;
+        var chooser = new OpenFileDialog
+        {
+            Title = "اختر قاعدة بيانات حضرموت القديمة (SQLite v8)",
+            Filter = "SQLite (*.db;*.sqlite)|*.db;*.sqlite|جميع الملفات (*.*)|*.*",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+        if (chooser.ShowDialog(this) != true) return;
+
+        string source = chooser.FileName;
+        _legacySource = null;
+        _legacyPreview = null;
+        _legacyBusy = true;
+        PreviewLegacyButton.IsEnabled = false;
+        ImportLegacyButton.IsEnabled = false;
+        LegacyPreviewText.Text = "جارٍ التحقق من بنية قاعدة البيانات وسلامتها دون تعديل الملف الأصلي...";
+        try
+        {
+            LegacyImportReport preview = await Task.Run(
+                () => new LegacyDatabaseImporter(LegacyNetDatabasePath()).Preview(source),
+                _cancel.Token);
+            if (!IsLoaded || !ConfirmCurrentAccess()) return;
+            _legacySource = source;
+            _legacyPreview = preview;
+            ImportLegacyButton.IsEnabled = true;
+            LegacyPreviewText.Text = "تم فحص " + Path.GetFileName(source) +
+                " بنجاح. راوترات: " + preview.Routers +
+                "، باقات: " + preview.Packages +
+                "، دفعات: " + preview.Batches +
+                "، كروت: " + preview.Cards +
+                "، إعدادات مسموحة: " + preview.Settings +
+                ". اضغط تأكيد الاستيراد فقط إذا كانت هذه النسخة تخصك.";
+        }
+        catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
+        catch (Exception)
+        {
+            if (IsLoaded)
+                LegacyPreviewText.Text = "رفض فحص المصدر: ملف غير صالح أو مخطط غير مدعوم أو لا تتوفر صلاحية قراءته. لا تغييرات على قاعدة HadramoutNET.";
+        }
+        finally
+        {
+            _legacyBusy = false;
+            if (IsLoaded) PreviewLegacyButton.IsEnabled = true;
+        }
+    }
+
+    private async void ImportLegacy_Click(object sender, RoutedEventArgs e)
+    {
+        if (_legacyBusy || !ConfirmCurrentAccess() ||
+            _legacySource is null || _legacyPreview is null) return;
+
+        string source = _legacySource;
+        LegacyImportReport expected = _legacyPreview;
+        var confirmed = MessageBox.Show(this,
+            "سيتم استيراد أرشيف حضرموت إلى قاعدة HadramoutNET المستقلة لمرة واحدة فقط.\\n" +
+            "المصدر للقراءة فقط، ولا تُنقل تراخيص البرنامج أو كلمات مرور الراوتر.\\n" +
+            "يُحفظ سجل كلمات مرور الكروت القديمة داخل أرشيف .NET دون إظهارها في هذه الشاشة.\\n" +
+            "تأكد من إغلاق برنامج حضرموت القديم أو اختيار نسخة احتياطية موثوقة.\\n" +
+            "عدد الكروت في المعاينة: " + expected.Cards +
+            ". ستعاد جميع الفحوص عند الاستيراد. هل توافق؟",
+            "تأكيد استيراد أرشيف حضرموت", MessageBoxButton.YesNo,
+            MessageBoxImage.Warning, MessageBoxResult.No);
+        if (confirmed != MessageBoxResult.Yes) return;
+
+        _legacyBusy = true;
+        PreviewLegacyButton.IsEnabled = false;
+        ImportLegacyButton.IsEnabled = false;
+        LegacyPreviewText.Text = "جارٍ الاستيراد بمعاملة SQLite واحدة إلى قاعدة منفصلة...";
+        bool imported = false;
+        try
+        {
+            // A confirmed transaction must finish or roll back safely even if
+            // the user closes the window; it must not be silently retried.
+            LegacyImportReport report = await Task.Run(
+                () => new LegacyDatabaseImporter(LegacyNetDatabasePath()).Import(source));
+            if (!IsLoaded) return;
+            _legacySource = null;
+            _legacyPreview = null;
+            imported = true;
+            LegacyPreviewText.Text = "تم استيراد " + report.Cards +
+                " كرت و" + report.Batches + " دفعة و" +
+                report.Packages + " باقة بنجاح إلى أرشيف .NET المستقل. لم يتغير الملف الأصلي.";
+        }
+        catch (Exception)
+        {
+            if (IsLoaded)
+                LegacyPreviewText.Text = "تعذر الاستيراد، ربما استُورد الأرشيف سابقا أو تغير ملف المصدر أو تعذر فتحه. لم يتم استبدال السجل السابق؛ افحص السبب قبل أي إعادة.";
+        }
+        finally
+        {
+            _legacyBusy = false;
+            if (IsLoaded)
+            {
+                PreviewLegacyButton.IsEnabled = true;
+                ImportLegacyButton.IsEnabled = _legacyPreview is not null;
+            }
+        }
+        if (imported) await LoadLegacyHistoryAsync(0);
+    }
+
+    private void RefreshLegacy_Click(object sender, RoutedEventArgs e) =>
+        _ = LoadLegacyHistoryAsync(0);
+    private void PreviousLegacy_Click(object sender, RoutedEventArgs e) =>
+        _ = LoadLegacyHistoryAsync(Math.Max(0, _legacyOffset - LegacyPageSize));
+    private void NextLegacy_Click(object sender, RoutedEventArgs e)
+    {
+        if (_legacyOffset <= int.MaxValue - LegacyPageSize)
+            _ = LoadLegacyHistoryAsync(_legacyOffset + LegacyPageSize);
+    }
+
+    private async Task LoadLegacyHistoryAsync(int offset = 0)
+    {
+        if (_legacyBusy || _legacyReading || !IsLoaded || !ConfirmCurrentAccess()) return;
+        _legacyReading = true;
+        LegacyPreviousButton.IsEnabled = false;
+        LegacyNextButton.IsEnabled = false;
+        LegacyPageText.Text = "جارٍ قراءة الأرشيف المستقل...";
+        try
+        {
+            LegacyHistoryPage page = await Task.Run(
+                () => new LegacyHistoryReader(LegacyNetDatabasePath()).ReadPage(offset, LegacyPageSize),
+                _cancel.Token);
+            if (!IsLoaded) return;
+            _legacyOffset = offset;
+            LegacyCardsGrid.ItemsSource = page.Cards;
+            LegacyPageText.Text = page.Imported
+                ? "السجلات: " + page.Total + "، المعروض: " + page.Cards.Count +
+                  "، من " + (page.Cards.Count == 0 ? 0 : (long)offset + 1)
+                  + " إلى " + ((long)offset + page.Cards.Count)
+                : "لم يستورد أي أرشيف قديم بعد.";
+            LegacyPreviousButton.IsEnabled = page.Imported && offset > 0;
+            LegacyNextButton.IsEnabled = page.Imported &&
+                (long)offset + LegacyPageSize < page.Total &&
+                offset <= int.MaxValue - LegacyPageSize;
+        }
+        catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
+        catch (Exception)
+        {
+            if (IsLoaded) LegacyPageText.Text = "تعذر فتح أرشيف .NET؛ لم يُعدَّل أي ملف.";
+        }
+        finally { _legacyReading = false; }
     }
 
     private bool ConfirmCurrentAccess()
