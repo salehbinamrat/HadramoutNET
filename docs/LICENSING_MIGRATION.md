@@ -43,6 +43,26 @@ corrupted mirror is never silently treated as a new first activation. It does
 Only isolated synthetic DPAPI fixtures have been exercised in Windows CI;
 real existing installations still require acceptance.
 
+## Isolated paid-code and Windows identity implementations
+
+- PaidCodeStore writes only to LOCALAPPDATA/HadramoutNET/licensing/paid-code.dpapi
+  using Windows DPAPI CurrentUser, a same-folder temporary file, and an
+  atomic replace. No code is exported to diagnostics or GitHub.
+- It reads LOCALAPPDATA/NidiMikroTikCards/licensing/supabase-license-id.txt
+  **without modifying it**, only if its own encrypted record does not exist.
+  It never reads the deprecated github-license-id.txt. Invalid encrypted
+  .NET storage is an error, not permission to fall back and reactivate.
+- WindowsLicenseIdentity uses HKLM/SOFTWARE/Microsoft/Cryptography/MachineGuid
+  and Registry64 when the Windows OS is 64-bit, even for x86 processes.
+  The original paid/trial SHA-256 prefixes are unchanged. No random substitute
+  or raw MachineGuid is written into the new application's files.
+- Reading an existing candidate paid code must be followed by a fresh signed
+  Supabase verification before granting access. Saving an entered code by
+  itself never starts or extends a trial and never grants paid access.
+- The WPF UI is still deliberately disconnected. Do not add implicit startup
+  claims, overwrite original licensing files or treat old trial records as
+  disposable.
+
 ## Blockers before live UI and release
 
 1. Validate the now-implemented read-only Windows trial mirror reader against
@@ -52,9 +72,11 @@ real existing installations still require acceptance.
    licensing state in CI. No mirror write/repair is permitted at this stage.
    The ability to begin a previously unstarted trial safely is **not**
    implemented and must not be inferred from a missing state.
-2. Implement secure, isolated code storage and device identity retrieval:
-   64-bit MachineGuid registry view on x86/x64, same SHA-256 prefixes as Python;
-   no accidental paid entitlement from a saved code alone.
+2. Code storage and MachineGuid-compatible identity core are implemented
+   and regression-tested on x86/x64 Windows. Remaining: connect activation UI
+   to these APIs only after real RouterOS and original license acceptance;
+   prove paid renewal, network failures and multiple Windows users without
+   exposing device fingerprints or resetting trial history.
 3. Integrate RouterOS login, user-visible activation and periodic online
    re-verification. Do not automatically claim at startup; require a user
    activation action. Paid checks must fail closed if overdue.
