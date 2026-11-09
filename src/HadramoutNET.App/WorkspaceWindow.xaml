@@ -82,74 +82,220 @@
                         Background="{StaticResource CreamPanel}"
                         FontFamily="Arial" FontSize="14">
                 <TabItem Header="الرئيسية">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <StackPanel Margin="14">
+                    <!-- Original source's 6-band dashboard, no page scrolling.
+                         Network data, heavy lifecycle and local activity are separate tiers. -->
+                    <Grid Margin="9,6,9,7">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="70"/>
+                            <RowDefinition Height="35"/>
+                            <RowDefinition Height="136"/>
+                            <RowDefinition Height="35"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="72"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Row="0" Background="{StaticResource GlossyRed}"
+                                CornerRadius="7" Margin="2,0,2,5" Padding="10,6">
                             <DockPanel>
-                                <TextBlock Text="حالة الشبكة" Style="{StaticResource PageHeader}"
-                                           DockPanel.Dock="Right"/>
-                                <Button Content="تحديث البيانات" DockPanel.Dock="Left"
-                                        Width="145" Height="35"
-                                        Click="RefreshDashboard_Click"/>
+                                <Image DockPanel.Dock="Right"
+                                       Source="/Assets/DashboardIcons/hadramout_mark.png"
+                                       Width="45" Height="45" Stretch="Uniform" Margin="3,0,9,0"/>
+                                <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center">
+                                    <TextBlock Text="لوحة التحكم الرئيسية" FontSize="19"
+                                               FontWeight="Bold" Foreground="White"/>
+                                    <TextBlock Text="حضرموت لإدارة الشبكات وطباعة الكروت"
+                                               FontSize="11" Foreground="#FFE6ED"/>
+                                </StackPanel>
+                                <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center"
+                                            Margin="6,0,2,0">
+                                    <Button Content="تحديث البيانات" Width="132" Height="34"
+                                            Click="RefreshDashboard_Click"/>
+                                    <TextBlock x:Name="DashboardDateText" FontSize="10"
+                                               TextAlignment="Center" Foreground="White"
+                                               Margin="0,3,0,0"/>
+                                </StackPanel>
+                                <TextBlock x:Name="DashboardHealthText" Text="فحص حالة الشبكة..."
+                                           FontSize="12" FontWeight="Bold" Foreground="White"
+                                           TextAlignment="Center" TextWrapping="Wrap"
+                                           VerticalAlignment="Center" Margin="8,0,8,0"/>
                             </DockPanel>
-                            <TextBlock x:Name="DashboardNotice" Margin="0,12"
-                                       Text="يتم جلب البيانات من الراوتر المتصل"
-                                       Foreground="{StaticResource TextMuted}"/>
-                            <UniformGrid Columns="3" Rows="2" Margin="0,10,0,18">
-                                <Border BorderBrush="{StaticResource SandBorder}" Background="#FFF2E6"
-                                        BorderThickness="1" Margin="5" Padding="17">
-                                    <StackPanel>
-                                        <TextBlock Text="معالج الراوتر" FontWeight="Bold"/>
-                                        <TextBlock x:Name="CpuValue" Text="—" FontSize="28"
+                        </Border>
+                        <Border Grid.Row="1" Background="#FFE5EF"
+                                BorderThickness="1" BorderBrush="#E7A9B7"
+                                CornerRadius="5" Margin="2,0,2,4" Padding="8,3">
+                            <TextBlock x:Name="DashboardLicenseText"
+                                       Text="حالة الوصول: جارٍ التحقق من الجلسة"
+                                       FontSize="13" FontWeight="Bold"
+                                       Foreground="{StaticResource DarkRed}"
+                                       VerticalAlignment="Center"/>
+                        </Border>
+                        <UniformGrid Grid.Row="2" Columns="5" Rows="1" Margin="0,1,0,2">
+                            <Border Style="{StaticResource DashboardMetricCard}">
+                                <StackPanel>
+                                    <Image Source="/Assets/DashboardIcons/total_cards.png"
+                                           Width="32" Height="32" HorizontalAlignment="Right"/>
+                                    <TextBlock Text="إجمالي الكروت" FontWeight="Bold" FontSize="13"/>
+                                    <TextBlock x:Name="DashboardTotalCardsValue" Text="—"
+                                               FontSize="25" FontWeight="Bold"
+                                               Foreground="{StaticResource DarkRed}"/>
+                                    <TextBlock Text="مدير المستخدمين" FontSize="10"
+                                               Foreground="{StaticResource TextMuted}"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource DashboardMetricCard}">
+                                <StackPanel>
+                                    <Image Source="/Assets/DashboardIcons/connected_users.png"
+                                           Width="32" Height="32" HorizontalAlignment="Right"/>
+                                    <TextBlock Text="المتصلون الآن" FontWeight="Bold" FontSize="13"/>
+                                    <TextBlock x:Name="DashboardConnectedValue" Text="—"
+                                               FontSize="25" FontWeight="Bold"
+                                               Foreground="{StaticResource DarkRed}"/>
+                                    <TextBlock Text="Hotspot + PPPoE" FontSize="10"
+                                               Foreground="{StaticResource TextMuted}"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource DashboardMetricCard}">
+                                <StackPanel>
+                                    <Image Source="/Assets/DashboardIcons/active_cards.png"
+                                           Width="32" Height="32" HorizontalAlignment="Right"/>
+                                    <TextBlock Text="الكروت النشطة" FontWeight="Bold" FontSize="13"/>
+                                    <TextBlock x:Name="DashboardActiveCardsValue" Text="—"
+                                               FontSize="25" FontWeight="Bold"
+                                               Foreground="#087E65"/>
+                                    <Button Content="عرض النشطة" FontSize="11" Height="27"
+                                            Margin="0,2,0,0" Click="OpenActiveCards_Click"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource DashboardMetricCard}">
+                                <StackPanel>
+                                    <Image Source="/Assets/DashboardIcons/expired_cards.png"
+                                           Width="32" Height="32" HorizontalAlignment="Right"/>
+                                    <TextBlock Text="الكروت المنتهية" FontWeight="Bold" FontSize="13"/>
+                                    <TextBlock x:Name="DashboardExpiredCardsValue" Text="—"
+                                               FontSize="25" FontWeight="Bold"
+                                               Foreground="#B32E4F"/>
+                                    <Button Content="عرض المنتهية" FontSize="11" Height="27"
+                                            Margin="0,2,0,0" Click="OpenExpiredCards_Click"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource DashboardMetricCard}">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <DockPanel Grid.Row="0" VerticalAlignment="Center">
+                                        <Image DockPanel.Dock="Right"
+                                               Source="/Assets/DashboardIcons/cpu_usage.png"
+                                               Width="24" Height="24" Margin="3"/>
+                                        <TextBlock Text="CPU" FontSize="13" FontWeight="Bold"
+                                                   VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="CpuValue" Text="—" FontSize="18"
+                                                   FontWeight="Bold" TextAlignment="Left"
                                                    Foreground="{StaticResource DarkRed}"/>
-                                    </StackPanel>
-                                </Border>
-                                <Border BorderBrush="{StaticResource SandBorder}" Background="#FFF2E6"
-                                        BorderThickness="1" Margin="5" Padding="17">
-                                    <StackPanel>
-                                        <TextBlock Text="استهلاك الذاكرة" FontWeight="Bold"/>
-                                        <TextBlock x:Name="RamValue" Text="—" FontSize="28"
+                                    </DockPanel>
+                                    <DockPanel Grid.Row="1" VerticalAlignment="Center">
+                                        <Image DockPanel.Dock="Right"
+                                               Source="/Assets/DashboardIcons/memory_usage.png"
+                                               Width="24" Height="24" Margin="3"/>
+                                        <TextBlock Text="RAM" FontSize="13" FontWeight="Bold"
+                                                   VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="RamValue" Text="—" FontSize="18"
+                                                   FontWeight="Bold" TextAlignment="Left"
                                                    Foreground="{StaticResource DarkRed}"/>
-                                    </StackPanel>
-                                </Border>
-                                <Border BorderBrush="{StaticResource SandBorder}" Background="#FFF2E6"
-                                        BorderThickness="1" Margin="5" Padding="17">
+                                    </DockPanel>
+                                </Grid>
+                            </Border>
+                        </UniformGrid>
+                        <Border Grid.Row="3" Background="#FFE8EE"
+                                CornerRadius="5" Margin="5,1,5,4" Padding="8,2">
+                            <DockPanel>
+                                <TextBlock x:Name="DashboardLifecycleNote" DockPanel.Dock="Right"
+                                           Text="حالة الكروت: قراءة عند الطلب لتجنب تحميل آلاف السجلات"
+                                           Foreground="{StaticResource DarkRed}"
+                                           FontSize="11" VerticalAlignment="Center"
+                                           TextWrapping="Wrap"/>
+                                <Button Content="تحديث النشطة والمنتهية" DockPanel.Dock="Left"
+                                        FontSize="11" Width="165" Height="28"
+                                        Click="RefreshDashboardLifecycle_Click"/>
+                            </DockPanel>
+                        </Border>
+                        <UniformGrid Grid.Row="4" Columns="3" Rows="1" Margin="0,1,0,5">
+                            <Border Style="{StaticResource DashboardLowerCard}">
+                                <DockPanel LastChildFill="True">
+                                    <TextBlock DockPanel.Dock="Top" Text="إجراءات سريعة"
+                                               Style="{StaticResource DashboardLowerHeader}"/>
                                     <StackPanel>
-                                        <TextBlock Text="كروت Hotspot" FontWeight="Bold"/>
-                                        <TextBlock x:Name="HotspotTotalValue" Text="—" FontSize="28"
-                                                   Foreground="{StaticResource DarkRed}"/>
+                                        <UniformGrid Columns="2" Rows="2" Margin="4,6,4,4">
+                                            <Button Content="إنشاء كروت" Height="46" Margin="3"
+                                                    Style="{StaticResource NavyReplacementButton}"
+                                                    Click="ShowCards_Click"/>
+                                            <Button Content="إدارة المستخدمين" Height="46" Margin="3"
+                                                    Style="{StaticResource NavyReplacementButton}"
+                                                    Click="ShowHotspot_Click"/>
+                                            <Button Content="مراقبة الجلسات" Height="46" Margin="3"
+                                                    Style="{StaticResource NavyReplacementButton}"
+                                                    Click="ShowDashboardSessions_Click"/>
+                                            <Button Content="إدارة الباقات" Height="46" Margin="3"
+                                                    Style="{StaticResource NavyReplacementButton}"
+                                                    Click="ShowPackages_Click"/>
+                                        </UniformGrid>
+                                        <WrapPanel HorizontalAlignment="Center" Margin="2,3,2,0">
+                                            <Button Content="الأرشيف" Width="85" Height="30"
+                                                    Margin="3" Click="ShowLegacy_Click"/>
+                                            <Button Content="سجل الرفع" Width="95" Height="30"
+                                                    Margin="3" Click="ShowDeliveryAudit_Click"/>
+                                        </WrapPanel>
                                     </StackPanel>
-                                </Border>
-                                <Border BorderBrush="{StaticResource SandBorder}" Background="#FFF2E6"
-                                        BorderThickness="1" Margin="5" Padding="17">
-                                    <StackPanel>
-                                        <TextBlock Text="متصلو Hotspot" FontWeight="Bold"/>
-                                        <TextBlock x:Name="HotspotActiveValue" Text="—" FontSize="28"
-                                                   Foreground="{StaticResource DarkRed}"/>
+                                </DockPanel>
+                            </Border>
+                            <Border Style="{StaticResource DashboardLowerCard}">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Top" Text="آخر النشاط"
+                                               Style="{StaticResource DashboardLowerHeader}"/>
+                                    <TextBlock x:Name="DashboardRecentActivity" Margin="12,10"
+                                               Text="لا توجد عمليات رفع محلية مسجلة"
+                                               TextWrapping="Wrap" FontSize="12"
+                                               Foreground="{StaticResource TextMuted}"/>
+                                </DockPanel>
+                            </Border>
+                            <Border Style="{StaticResource DashboardLowerCard}">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Top" Text="بيانات الراوتر"
+                                               Style="{StaticResource DashboardLowerHeader}"/>
+                                    <StackPanel Margin="11,6,11,2">
+                                        <TextBlock x:Name="DashboardRouterName" Text="اسم الراوتر: —"
+                                                   FontWeight="Bold" Margin="0,2"/>
+                                        <TextBlock x:Name="DashboardRouterHost" Text="عنوان الراوتر: —"
+                                                   Margin="0,2"/>
+                                        <TextBlock x:Name="RouterVersionText" Text="RouterOS: —"
+                                                   Margin="0,2"/>
+                                        <TextBlock x:Name="RouterUptimeText" Text="وقت التشغيل: —"
+                                                   Margin="0,2"/>
+                                        <TextBlock x:Name="DashboardNotice"
+                                                   Text="يتم جلب البيانات من الراوتر المتصل"
+                                                   Foreground="{StaticResource TextMuted}"
+                                                   FontSize="11" TextWrapping="Wrap"
+                                                   Margin="0,4,0,0"/>
                                     </StackPanel>
-                                </Border>
-                                <Border BorderBrush="{StaticResource SandBorder}" Background="#FFF2E6"
-                                        BorderThickness="1" Margin="5" Padding="17">
-                                    <StackPanel>
-                                        <TextBlock Text="متصلو PPPoE" FontWeight="Bold"/>
-                                        <TextBlock x:Name="PppActiveValue" Text="—" FontSize="28"
-                                                   Foreground="{StaticResource DarkRed}"/>
-                                    </StackPanel>
-                                </Border>
-                                <Border BorderBrush="{StaticResource SandBorder}" Background="#FFF2E6"
-                                        BorderThickness="1" Margin="5" Padding="17">
-                                    <StackPanel>
-                                        <TextBlock Text="مستخدمو User Manager 6/7" FontWeight="Bold"/>
-                                        <TextBlock x:Name="UserManagerValue" Text="—" FontSize="28"
-                                                   Foreground="{StaticResource DarkRed}"/>
-                                    </StackPanel>
-                                </Border>
-                            </UniformGrid>
-                            <TextBlock x:Name="RouterVersionText" Text="إصدار RouterOS: —"
-                                       FontSize="15" Margin="10,5"/>
-                            <TextBlock x:Name="RouterUptimeText" Text="وقت تشغيل الراوتر: —"
-                                       FontSize="15" Margin="10,5"/>
-                        </StackPanel>
-                    </ScrollViewer>
+                                </DockPanel>
+                            </Border>
+                        </UniformGrid>
+                        <Border Grid.Row="5" Background="#96162E"
+                                CornerRadius="6" Margin="2,0,2,0">
+                            <DockPanel LastChildFill="True">
+                                <Image Source="/Assets/router_banner.jpg"
+                                       Width="236" Stretch="UniformToFill"
+                                       DockPanel.Dock="Left"/>
+                                <StackPanel VerticalAlignment="Center" Margin="12,3">
+                                    <TextBlock Text="حضرموت — إدارة موثوقة للشبكات والكروت"
+                                               Foreground="White" FontSize="15"
+                                               FontWeight="Bold"/>
+                                    <TextBlock Text="متابعة الكروت والباقات ومراقبة حالة MikroTik"
+                                               Foreground="#FFDCE5" FontSize="11"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
                 </TabItem>
 
                 <TabItem Header="إنشاء الكروت">
