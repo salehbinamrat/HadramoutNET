@@ -90,6 +90,8 @@ public sealed class RouterStandardVoucherVerifier
                 string state;
                 if (!observed.TryGetValue(username, out var entry))
                     state = "not_found";
+                else if (!IsKnownDisabledFlag(entry.Disabled))
+                    state = "disabled_unknown";
                 else if (IsDisabled(entry.Disabled))
                     state = "disabled";
                 else if (string.IsNullOrWhiteSpace(entry.Profile))
@@ -117,6 +119,13 @@ public sealed class RouterStandardVoucherVerifier
 
     private static string Field(IReadOnlyDictionary<string, string> data, string key) =>
         data.TryGetValue(key, out string? value) ? value ?? "" : "";
+
+    private static bool IsKnownDisabledFlag(string value) =>
+        value.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+        value.Equals("no", StringComparison.OrdinalIgnoreCase) ||
+        value.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+        value.Equals("false", StringComparison.OrdinalIgnoreCase) ||
+        value is "1" or "0";
 
     private static bool IsDisabled(string value) =>
         value.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
