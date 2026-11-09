@@ -25,6 +25,13 @@ yet a complete recreation of all the original Python program's services.
   Passwords are not requested from RouterOS.
 - PPPoE accounts: a separate live, read-only table with username, profile,
   disabled state and service. No password columns or mutation actions.
+- Network monitoring: separate read-only Hotspot server, router-discovered
+  neighbor and live Hotspot/PPPoE session tabs. All data is fetched from the
+  authorized session using exact property lists. A count-only preflight refuses
+  unsafe neighbor (>5000) or per-service session (>2500) listings, unknown
+  counts are unavailable rather than zero. Search and explicit IP/MAC copy
+  are local-only. Maintenance writes and disconnect remain disabled.
+  See `docs/NETWORK_MONITORING.md`.
 - User Manager v6/v7: the pre-existing UserManagerCatalog page is retained
   (user and profile listing, permission-aware status); no parallel directory
   or duplicate UI handler was added. The separate new RouterAccountDirectory
