@@ -29,6 +29,8 @@ public partial class WorkspaceWindow : Window
     private readonly RouterDashboardReader _dashboard = new();
     private readonly RouterAccountDirectory _directory = new();
     private readonly RouterNetworkInventory _networkInventory = new();
+    private readonly UserManagerDatabaseStatus _umDatabaseStatus = new();
+    private bool _readingUmDatabase;
     private SessionMaintenanceJournal? _maintenanceAudit;
     private RouterSessionDisconnect? _sessionDisconnect;
     private RouterSessionReconciler? _sessionReconciler;
@@ -758,6 +760,59 @@ public partial class WorkspaceWindow : Window
         finally { _legacyReading = false; }
     }
 
+
+    private void RefreshUmDatabase_Click(object sender, RoutedEventArgs e) =>
+        _ = LoadUmDatabaseAsync();
+
+    private async Task LoadUmDatabaseAsync()
+    {
+        if (_readingUmDatabase || !IsLoaded || !ConfirmCurrentAccess()) return;
+        _readingUmDatabase = true;
+        RefreshUmDatabaseButton.IsEnabled = false;
+        UmDatabaseVersionValue.Text = "—";
+        UmDatabaseSizeValue.Text = "—";
+        UmDatabaseFreeValue.Text = "—";
+        UmDatabaseNotice.Text = "جارٍ قراءة حالة قاعدة User Manager دون تنفيذ أي صيانة...";
+        try
+        {
+            UserManagerDatabaseSnapshot result = await _umDatabaseStatus.ReadAsync(
+                _session, _cancel.Token);
+            if (!IsLoaded) return;
+            if (result.Version is 6 or 7)
+                UmDatabaseVersionValue.Text = "RouterOS " + result.Version;
+            if (result.Available)
+            {
+                UmDatabaseSizeValue.Text = result.DatabaseSize ?? "—";
+                UmDatabaseFreeValue.Text = result.FreeDiskSpace ?? "—";
+            }
+            UmDatabaseNotice.Text = result.Status switch
+            {
+                "ready" => "حالة قاعدة User Manager متاحة للقراءة فقط. القيم معروضة كما أرسلها الراوتر؛ لا تُفترض وحدة إضافية.",
+                "not_installed" => "User Manager غير مثبت أو لا يوجد أمر مدعوم لكشفه.",
+                "permission_denied" => "الراوتر رفض صلاحية قراءة User Manager؛ لا تعني هذه الحالة أن قاعدة البيانات فارغة.",
+                "empty_response" => "لم يُرجع الراوتر بيانات عن قاعدة User Manager؛ لا تتوفر قيم مؤكدة.",
+                "fields_unavailable" => "الراوتر لم يُرجع حجم القاعدة والمساحة الحرة بشكل صالح وكامل.",
+                "database_unavailable" => "تم تحديد إصدار User Manager لكن تعذرت قراءة حالة قاعدة البيانات.",
+                _ => "تعذرت قراءة حالة قاعدة User Manager؛ لم تُغيّر أي إعدادات."
+            };
+        }
+        catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
+        catch (InvalidOperationException)
+        {
+            if (IsLoaded) LockWorkspace();
+        }
+        catch (Exception)
+        {
+            if (IsLoaded)
+                UmDatabaseNotice.Text =
+                    "تعذر الوصول لحالة قاعدة User Manager؛ لم تُجرَ أي تغييرات على الراوتر.";
+        }
+        finally
+        {
+            _readingUmDatabase = false;
+            if (IsLoaded) RefreshUmDatabaseButton.IsEnabled = true;
+        }
+    }
 
     private void RefreshServers_Click(object sender, RoutedEventArgs e) =>
         _ = LoadNetworkServersAsync();
