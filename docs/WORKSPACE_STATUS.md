@@ -29,8 +29,10 @@ yet a complete recreation of all the original Python program's services.
   and profiles. Duplicates or unknown profiles refuse the batch before writes.
   Per-card RouterOS traps stop delivery and uncertain transport responses
   NEVER trigger automatic retries. Partial changes require manual reconciliation.
-  User Manager v6/v7 remote provisioning and full durable operation audit
-  are still unimplemented.
+  User Manager v6/v7 now also supports **explicit confirmed provisioning**
+  with real remote owner/profile preflight and two-phase account/profile
+  linking. Any uncertain stage blocks replay of the draft. Full durable
+  operation audit is still unimplemented.
 - Package settings: explicit local SavePackage/LoadPackage, persisted
   in HadramoutNET's own SQLite store, not Python's original database.
 - Logout: close active RouterOS socket and return to protected login.
@@ -42,8 +44,8 @@ yet a complete recreation of all the original Python program's services.
   sharing ProgramData storage permissions; cross-process serialization;
   resilient clock handling across suspend/resume.
 - Atomic online card creation/delivery with duplicate prevention,
-  activity/error recovery, Hotspot PPP and UM6/UM7 service operations,
-  user maintenance, subscriptions and end-to-end profile lifecycle.
+  activity/error recovery, remaining Hotspot PPP and UM6/UM7 service
+  operations, user maintenance, subscriptions and end-to-end profile lifecycle.
 - Physical card layouts, live preview, PDF and native Windows print,
   router file transfer, reports, full styling/navigation parity and
   installer/portable post-install validation.
