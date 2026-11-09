@@ -1,4 +1,5 @@
 using System.Text.Json;
+using HadramoutNET.Core.Exporting;
 
 namespace HadramoutNET.Core.Printing;
 
@@ -84,6 +85,19 @@ public static class CardTemplateExchange
         if (json.Length > MaxJsonBytes)
             throw new PrintLayoutException("قالب الكرت يتجاوز 22 ميجابايت.");
         return json;
+    }
+
+    /// <summary>
+    /// Validate the entire card JSON before changing any destination file.
+    /// Uses the existing atomic core export and never touches Python storage.
+    /// </summary>
+    public static string SaveFile(string destination, CardArtOptions artwork,
+        IReadOnlyDictionary<string, JsonElement>? extras = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(destination);
+        byte[] bytes = Export(artwork, extras);
+        return AtomicExportFile.Write(destination,
+            staged => File.WriteAllBytes(staged, bytes));
     }
 
     public static IReadOnlyDictionary<string, JsonElement> ExtractExtras(
