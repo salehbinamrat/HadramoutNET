@@ -500,7 +500,7 @@
                                         <Button x:Name="DisconnectSessionButton"
                                                 Content="فصل الجلسة المحددة" Width="170" Height="36"
                                                 Margin="6,0,0,0" DockPanel.Dock="Left"
-                                                Click="DisconnectSession_Click"/>
+                                                IsEnabled="False" Click="DisconnectSession_Click"/>
                                     </DockPanel>
                                     <DataGrid x:Name="SessionsGrid" Grid.Row="1"
                                               IsReadOnly="True" AutoGenerateColumns="False"
@@ -510,6 +510,36 @@
                                             <DataGridTextColumn Header="اسم المستخدم" Binding="{Binding Username}" Width="*"/>
                                             <DataGridTextColumn Header="عنوان IP" Binding="{Binding Address}" Width="*"/>
                                             <DataGridTextColumn Header="المعرف" Binding="{Binding Id}" Width="105"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </TabItem>
+                            <TabItem Header="سجل العمليات">
+                                <Grid Margin="9">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <WrapPanel Grid.Row="0" Margin="3,0,3,8">
+                                        <Button Content="تحديث سجل العمليات" Width="170" Height="36"
+                                                Margin="4" Click="RefreshMaintenanceAudit_Click"/>
+                                    </WrapPanel>
+                                    <TextBlock x:Name="MaintenanceAuditNotice" Grid.Row="1"
+                                               Margin="4,0,4,10" TextWrapping="Wrap"
+                                               Text="السجل المحلي يحفظ محاولات فصل الجلسات وحالة الإرسال. حالة «غير مؤكدة» لا تعني نجاح الفصل؛ تحقق من الراوتر يدويا."/>
+                                    <DataGrid x:Name="MaintenanceAuditGrid" Grid.Row="2"
+                                              IsReadOnly="True" AutoGenerateColumns="False"
+                                              CanUserAddRows="False" EnableRowVirtualization="True">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="التاريخ UTC" Binding="{Binding CreatedAtUtc}" Width="190"/>
+                                            <DataGridTextColumn Header="الراوتر" Binding="{Binding RouterIdentity}" Width="120"/>
+                                            <DataGridTextColumn Header="الخدمة" Binding="{Binding Service}" Width="90"/>
+                                            <DataGridTextColumn Header="المستخدم" Binding="{Binding Username}" Width="*"/>
+                                            <DataGridTextColumn Header="IP" Binding="{Binding Address}" Width="130"/>
+                                            <DataGridTextColumn Header="المعرف" Binding="{Binding RecordId}" Width="85"/>
+                                            <DataGridTextColumn Header="الحالة" Binding="{Binding StateLabel}" Width="155"/>
+                                            <DataGridTextColumn Header="النتيجة" Binding="{Binding Outcome}" Width="145"/>
                                         </DataGrid.Columns>
                                     </DataGrid>
                                 </Grid>
