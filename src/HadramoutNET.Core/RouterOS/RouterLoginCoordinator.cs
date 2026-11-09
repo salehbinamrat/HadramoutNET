@@ -1,4 +1,5 @@
 using HadramoutNET.Core.Licensing;
+using System.Runtime.Versioning;
 
 namespace HadramoutNET.Core.RouterOS;
 
@@ -84,6 +85,7 @@ public sealed class RouterLoginCoordinator : IAsyncDisposable
     private RouterAuthorizedSession? _active;
     private bool _disposed;
 
+    [SupportedOSPlatform("windows")]
     public RouterLoginCoordinator(
         PaidLicenseCoordinator paid, TrialStateManager trial,
         Func<TimeSpan> processUptime)
