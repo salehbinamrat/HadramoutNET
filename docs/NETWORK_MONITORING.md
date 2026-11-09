@@ -22,7 +22,7 @@ create a general Winbox clone and does not grant write access to the router.
   included in result DTOs, even if a misbehaving peer sends them.
 - UI has separate status messages for permission denial, unreachable
   services and excessive counts. Refresh is explicit. There is no auto
-  mutation, disconnect, server disable, remote command execution or
+  mutation, server disable, remote command execution or
   scheduled network scan.
 
 ## Test-first evidence
@@ -34,13 +34,40 @@ unknown field exclusion, disabled state and session authorization.
 `Windows Core` and `Windows Release` x86/x64 run concurrently on one
 SHA, including compilation of the WPF UI.
 
+## Targeted disconnect stage (after read-only inventory)
+
+- The user explicitly selects **one** row from the current Hotspot/PPPoE
+  session list and accepts **two** warning/confirmation dialogs.
+  No background, automatic or batch disconnect exists.
+- The trusted core service requires the original `.id` (`*HEX`),
+  service, username and IP address, and reloads the selected session from
+  RouterOS with a query by `.id`. A missing, duplicated or changed
+  identity rejects the operation before any write.
+- A new internal authenticated-session method allows ONLY
+  `/ip/hotspot/active/remove` or `/ppp/active/remove` with ONE exact
+  `.id`. No generic delete or router console command is exposed.
+- A fully acknowledged `!done` is reported as **accepted**, not proven
+  disconnected. The user refreshes the current live-session listing to
+  verify the outcome.
+- Explicit RouterOS `!trap` is reported as rejected, without exposing
+  raw trap messages; a dropped socket, cancellation or lost ACK after
+  dispatch returns **uncertain**, never retried automatically. The UI
+  clears its possibly stale listing and requires an explicit refresh.
+- Synthetic TCP integration tests verify no write without confirmation,
+  changed identity refusing the remove, an exact single remove,
+  PPPoE lost acknowledgment, rejected trap and invalid service/ID.
+- This remains a deliberately narrow maintenance operation. A
+  read-check/write sequence is not atomic against other router users;
+  RouterOS v6/v7 hardware acceptance and audit/reconciliation are still
+  necessary before production release.
+
 ## Work still required before full Python parity
 
 - RouterOS v6/v7 hardware tests with restricted API accounts and high
   loads; TLS certificate verification and real network access.
-- The original two-confirmation maintenance actions, safe temporary
-  Hotspot-mode recording/recovery, targeted session disconnect,
-  precise post-write state rechecks and durable audit logs.
+- Other original two-confirmation maintenance actions, safe temporary
+  Hotspot-mode recording/recovery, complete post-write state rechecks
+  and durable audit logs.
 - User/account maintenance, richer reports, live print-template parity
   and four Windows packages only **after** full release acceptance.
 - An explicit, safe recovery plan for lost acknowledgments; never retry
