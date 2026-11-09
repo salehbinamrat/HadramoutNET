@@ -92,6 +92,25 @@ public sealed class CardArtworkContractTests
         Assert.Equal(new CardArtPoint(220, 75), loaded.Positions["qr"]);
     }
 
+    [Fact]
+    public void Optional_card_label_values_survive_save_load_for_each_package()
+    {
+        var labels = new CardArtOptions(
+            ShowPrice: true, ShowCapacity: true, ShowDuration: true,
+            ShowValidity: true, ShowDate: true,
+            Price: "150 ر.ي", Capacity: "2 GB",
+            Duration: "2h30m", Validity: "7 يوم", Date: "2026-11-09");
+        var saved = CardArtPresetCodec.ToSettings(labels);
+        var loaded = CardArtPresetCodec.FromSettings(saved);
+        Assert.Equal(labels.Price, loaded.Price);
+        Assert.Equal(labels.Capacity, loaded.Capacity);
+        Assert.Equal(labels.Duration, loaded.Duration);
+        Assert.Equal(labels.Validity, loaded.Validity);
+        Assert.Equal(labels.Date, loaded.Date);
+        Assert.All(new[] { "price", "capacity", "duration", "validity", "date" },
+            key => Assert.True(saved.ContainsKey("card." + key + "_text")));
+    }
+
     [Theory]
     [InlineData("card.qr_mode", "\"bad\"")]
     [InlineData("card.qr_size_mm", "\"NaN\"")]
