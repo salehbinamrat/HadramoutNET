@@ -47,3 +47,36 @@ behavior and physical MikroTik integration still require acceptance tests.
 Release stays gated: independent Windows Core and Windows Release x86/x64
 must pass on the same SHA; four Windows Portable/Installer outputs and
 real-device parity are still missing. Do not merge the draft PR or ship.
+
+## Operator-assisted User Manager review after restart
+
+The new WPF action **مراجعة رفع سابق (User Manager)** offers a manual
+inspection of unresolved, persisted `userman` attempts. The user must
+select the exact audit attempt and supply the exact number of card
+**usernames** from a separate trusted card export, one per line.
+**Passwords and entire CSV files must not be pasted.** Input is kept
+only in application memory for the immediate read-only verification.
+
+Before any router read, `VoucherDeliveryReconciler` checks the attempt
+identity and endpoint against the authenticated router, the service
+type, the unresolved status, the batch count (maximum 5,000), and
+duplicate or invalid names. It then uses the already exercised User
+Manager 6/7 verifier. Only allowlisted aggregate state/count pairs,
+the check time and the User Manager version are appended to
+`voucher_delivery_checks` with a router/attempt/batch-size scoped
+SQLite insert. No username, password, license data or RouterOS trap text
+is written.
+
+Repeated manual checks are append-only. The original upload state
+(`started`/`dispatching`/`partial`/`uncertain`) is preserved,
+including when newly observed current accounts appear active.
+A historical check is **evidence of current router state only**: it
+does not establish that an earlier attempt created the accounts or
+that the cards will authenticate successfully. No automatic recovery,
+profile activation, retry or delete is triggered.
+
+This still does **not** provide a guaranteed identity match without
+the operator's original trusted export, a persisted per-card delivery
+record or hardware acceptance. The Hotspot/PPPoE reconcilers and
+per-stage User Manager creation-versus-profile-attachment audit remain
+future work. Do not merge/ship solely because read-only review passed.
