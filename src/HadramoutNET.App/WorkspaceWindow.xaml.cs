@@ -621,6 +621,7 @@ public partial class WorkspaceWindow : Window
         "profile_unknown" => "الحساب موجود لكن الباقة غير معلومة",
         "service_other" => "خدمة PPP لا تطابق PPPoE",
         "disabled" => "الحساب موجود لكنه معطل",
+        "disabled_unknown" => "حالة تفعيل الحساب غير معروفة",
         "not_found" => "الاسم غير موجود في القائمة المقروءة",
         _ => "حالة غير معروفة"
     };
