@@ -57,6 +57,31 @@ public sealed class RouterAuthorizedSession : IAsyncDisposable
         finally { _lock.Release(); }
     }
 
+    /// <summary>
+    /// Only the trusted core publisher can issue explicit voucher additions.
+    /// Never expose a general mutation endpoint to the WPF UI.
+    /// </summary>
+    internal async Task<RouterOsCommandResult> ExecuteVoucherAddAsync(
+        string path, IReadOnlyDictionary<string, string> attributes,
+        CancellationToken cancellationToken = default)
+    {
+        if (path is not ("/ip/hotspot/user/add" or "/ppp/secret/add"))
+            throw new InvalidOperationException("فقط إضافة الكروت المصرح بها متاحة.");
+        RouterOsCommandGuard.Validate(path, attributes);
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!HasCurrentAccess)
+                throw new InvalidOperationException("انتهت صلاحية الجلسة؛ لن يُرسل أمر إضافة.");
+            var output = await _api.ExecuteAsync(path, attributes,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!HasCurrentAccess)
+                throw new InvalidOperationException("انتهت صلاحية الجلسة أثناء الإضافة.");
+            return output;
+        }
+        finally { _lock.Release(); }
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _lock.WaitAsync().ConfigureAwait(false);

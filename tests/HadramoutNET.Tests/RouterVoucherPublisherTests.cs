@@ -138,7 +138,7 @@ public sealed class RouterVoucherPublisherTests
         Assert.True(result.Success);
         Assert.Equal(2, result.Added);
         Assert.False(result.Uncertain);
-        Assert.Equal(["voucher001", "voucher002"], result.AddedUsernames);
+        Assert.Equal(new[] { "voucher001", "voucher002" }, result.AddedUsernames);
         await server;
     }
 
