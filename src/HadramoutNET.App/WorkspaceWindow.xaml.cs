@@ -540,11 +540,10 @@ public partial class WorkspaceWindow : Window
         {
             var attempts = _voucherAudit.ReadUnresolved(
                     _session.Identity, _session.Endpoint, 200)
-                .Where(item => item.Service == "userman")
                 .ToArray();
             if (attempts.Length == 0)
             {
-                CardsNotice.Text = "لا توجد محاولات رفع غير محسومة في User Manager لهذا الراوتر.";
+                CardsNotice.Text = "لا توجد محاولات رفع غير محسومة لهذا الراوتر.";
                 return;
             }
 
@@ -552,33 +551,54 @@ public partial class WorkspaceWindow : Window
                 VoucherReconciliationPrompt.Show(this, attempts);
             if (request is null) return;
 
-            CardsNotice.Text = "جارٍ فحص محاولة User Manager السابقة للقراءة فقط...";
-            var result = await new VoucherDeliveryReconciler(_voucherAudit)
-                .ReconcileAsync(_session, request.AttemptId, request.Usernames, _cancel.Token);
+            var chosen = attempts.Single(item => item.Id == request.AttemptId);
+            CardsNotice.Text = "جارٍ فحص محاولة الرفع السابقة للقراءة فقط...";
+            var verifier = new VoucherDeliveryReconciler(_voucherAudit);
+            string status;
+            long checkId;
+            IReadOnlyDictionary<string, int>? counts;
+            if (chosen.Service == "userman")
+            {
+                var outcome = await verifier.ReconcileAsync(
+                    _session, request.AttemptId, request.Usernames, _cancel.Token);
+                status = outcome.Status;
+                counts = outcome.Check?.Counts;
+                checkId = outcome.Check?.Id ?? 0;
+            }
+            else
+            {
+                var outcome = await verifier.ReconcileStandardAsync(
+                    _session, request.AttemptId, request.Usernames, _cancel.Token);
+                status = outcome.Status;
+                counts = outcome.Check?.Counts;
+                checkId = outcome.Check?.Id ?? 0;
+            }
 
             if (!IsLoaded) return;
-            if (!result.Available || result.Check is null)
+            if (counts is null)
             {
-                CardsNotice.Text = result.Status switch
+                CardsNotice.Text = status switch
                 {
                     "limit_exceeded" => "يحتوي الراوتر على سجلات أكثر من الحد الآمن للفحص.",
-                    "incomplete" => "قراءة User Manager غير مكتملة، لم يُحفظ ملخص مضلل.",
+                    "incomplete" => "قراءة حسابات الراوتر غير مكتملة، ولم يُحفظ ملخص مضلل.",
                     "not_installed" => "User Manager غير مثبت أو غير متاح.",
                     _ => "تعذر تأكيد القراءة من الراوتر، ولم تتغير حالة المحاولة السابقة."
                 };
                 return;
             }
 
-            string details = string.Join("\n", result.Check.Counts
+            string details = string.Join("\n", counts
                 .OrderBy(pair => pair.Key, StringComparer.Ordinal)
-                .Select(pair => DescribeUmObservation(pair.Key) +
+                .Select(pair => (chosen.Service == "userman" ?
+                        DescribeUmObservation(pair.Key) :
+                        DescribeStandardObservation(pair.Key)) +
                     ": " + pair.Value.ToString(CultureInfo.InvariantCulture)));
             CardsNotice.Text =
-                $"حُفظ الفحص #{result.Check.Id} للمحاولة #{request.AttemptId} — بدون أسماء كروت أو كلمات مرور.";
+                $"حُفظ الفحص #{checkId} للمحاولة #{request.AttemptId} — بدون أسماء كروت أو كلمات مرور.";
             MessageBox.Show(this,
                 details + "\n\nهذه ملاحظات حالية فقط ولا تثبت نجاح الرفع القديم. " +
                 "تبقى محاولة الرفع الأصلية غير محسومة، دون إعادة إرسال أو تعديل تلقائي.",
-                "مراجعة محاولة User Manager سابقة",
+                "مراجعة محاولة رفع سابقة",
                 MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
@@ -593,6 +613,17 @@ public partial class WorkspaceWindow : Window
             if (IsLoaded) ReconcileVoucherButton.IsEnabled = true;
         }
     }
+
+    private static string DescribeStandardObservation(string state) => state switch
+    {
+        "profile_matches" => "الحساب والباقة مطابقان حاليا",
+        "profile_other" => "الحساب موجود بباقة مختلفة",
+        "profile_unknown" => "الحساب موجود لكن الباقة غير معلومة",
+        "service_other" => "خدمة PPP لا تطابق PPPoE",
+        "disabled" => "الحساب موجود لكنه معطل",
+        "not_found" => "الاسم غير موجود في القائمة المقروءة",
+        _ => "حالة غير معروفة"
+    };
 
     private void ShowDeliveryAudit_Click(object sender, RoutedEventArgs e)
     {
@@ -611,10 +642,21 @@ public partial class WorkspaceWindow : Window
             string details = history.Count == 0 ? "لم تسجل أي محاولات لهذا الراوتر." :
                 string.Join("\n", history.Select(item =>
                 {
-                    VoucherDeliveryCheck? latest =
-                        _voucherAudit.ReadChecks(item.Id, 1).FirstOrDefault();
-                    string checkedAt = latest is null ? "" :
-                        $" | آخر فحص: {latest.ObservedUtc} ({latest.Counts.Values.Sum()} اسم)";
+                    string checkedAt;
+                    if (item.Service == "userman")
+                    {
+                        VoucherDeliveryCheck? latest =
+                            _voucherAudit.ReadChecks(item.Id, 1).FirstOrDefault();
+                        checkedAt = latest is null ? "" :
+                            $" | آخر فحص: {latest.ObservedUtc} ({latest.Counts.Values.Sum()} اسم)";
+                    }
+                    else
+                    {
+                        VoucherDeliveryStandardCheck? latest =
+                            _voucherAudit.ReadStandardChecks(item.Id, 1).FirstOrDefault();
+                        checkedAt = latest is null ? "" :
+                            $" | آخر فحص: {latest.ObservedUtc} ({latest.Counts.Values.Sum()} اسم)";
+                    }
                     return $"#{item.Id} | {item.CreatedAtUtc} | {item.Service} / {item.Profile} | " +
                         $"{item.Added}/{item.Attempted} | {item.StateLabel}{checkedAt}";
                 }));
