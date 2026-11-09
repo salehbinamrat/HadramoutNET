@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using HadramoutNET.Core.Cards;
+using HadramoutNET.Core.Printing;
 using HadramoutNET.Core.Data;
 using HadramoutNET.Core.Exporting;
 using HadramoutNET.Core.Licensing;
