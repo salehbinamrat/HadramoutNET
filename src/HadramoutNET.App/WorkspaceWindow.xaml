@@ -30,6 +30,10 @@
                             Click="ShowHotspot_Click"/>
                     <Button Content="الباقات" Style="{StaticResource SidebarButton}"
                             Click="ShowPackages_Click"/>
+                    <Button Content="حسابات PPPoE" Style="{StaticResource SidebarButton}"
+                            Click="ShowPpp_Click"/>
+                    <Button Content="مستخدمو User Manager" Style="{StaticResource SidebarButton}"
+                            Click="ShowUserManager_Click"/>
                     <Button Content="مدير المستخدمين 6/7" Style="{StaticResource SidebarButton}"
                             Click="ShowUserManager_Click"/>
                 </StackPanel>
@@ -323,6 +327,58 @@
                                 <DataGridTextColumn Header="الباقة الحالية" Binding="{Binding Profile}" Width="*"/>
                                 <DataGridTextColumn Header="معطل" Binding="{Binding Disabled}" Width="100"/>
                                 <DataGridTextColumn Header="العميل / المالك" Binding="{Binding Customer}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </TabItem>
+                <TabItem Header="حسابات PPPoE">
+                    <Grid Margin="12">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <DockPanel Margin="4,0,4,10">
+                            <TextBlock x:Name="PppNotice"
+                                       Text="قراءة أسماء حسابات PPPoE فقط دون كلمات المرور"
+                                       DockPanel.Dock="Right" VerticalAlignment="Center"
+                                       Style="{StaticResource PageHeader}"/>
+                            <Button Content="تحديث" Width="100" Height="35"
+                                    DockPanel.Dock="Left" Click="RefreshPpp_Click"/>
+                        </DockPanel>
+                        <DataGrid x:Name="PppGrid" Grid.Row="1"
+                                  AutoGenerateColumns="False" IsReadOnly="True"
+                                  CanUserAddRows="False" EnableRowVirtualization="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="اسم المستخدم" Binding="{Binding Name}" Width="*"/>
+                                <DataGridTextColumn Header="الباقة" Binding="{Binding Group}" Width="*"/>
+                                <DataGridTextColumn Header="معطل" Binding="{Binding Disabled}" Width="110"/>
+                                <DataGridTextColumn Header="الخدمة" Binding="{Binding Detail}" Width="130"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="User Manager">
+                    <Grid Margin="12">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <DockPanel Margin="4,0,4,10">
+                            <TextBlock x:Name="UserManagerNotice"
+                                       Text="قائمة مستخدمي User Manager v6/v7 — عرض فقط"
+                                       DockPanel.Dock="Right" VerticalAlignment="Center"
+                                       Style="{StaticResource PageHeader}"/>
+                            <Button Content="تحديث" Width="100" Height="35"
+                                    DockPanel.Dock="Left" Click="RefreshUserManager_Click"/>
+                        </DockPanel>
+                        <DataGrid x:Name="UserManagerGrid" Grid.Row="1"
+                                  AutoGenerateColumns="False" IsReadOnly="True"
+                                  CanUserAddRows="False" EnableRowVirtualization="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="اسم المستخدم" Binding="{Binding Name}" Width="*"/>
+                                <DataGridTextColumn Header="العميل / المجموعة" Binding="{Binding Group}" Width="*"/>
+                                <DataGridTextColumn Header="معطل" Binding="{Binding Disabled}" Width="110"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </Grid>
