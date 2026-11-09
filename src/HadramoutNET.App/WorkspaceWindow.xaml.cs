@@ -1445,10 +1445,13 @@ public partial class WorkspaceWindow : Window
                 settings[pair.Key] = pair.Value.Clone();
             foreach (var pair in CardArtPresetCodec.ToSettings(_cardArt))
                 settings[pair.Key] = pair.Value;
-            _packages.SavePackage(PackageNameBox.Text, settings);
-            CardsPackageNameBox.Text = PackageNameBox.Text;
+            long savedId = _packages.SaveOrUpdatePackage(PackageNameBox.Text, settings);
+            CardsPackageNameBox.Text = PackageNameBox.Text.Trim();
             ReloadPackages();
-            WorkspaceStatus.Text = "حُفظت إعدادات هذه الباقة في HadramoutNET فقط.";
+            PackagePreset? saved = (PackagesGrid.ItemsSource as IEnumerable<PackagePreset>)?
+                .FirstOrDefault(item => item.Id == savedId);
+            if (saved is not null) PackagesGrid.SelectedItem = saved;
+            WorkspaceStatus.Text = "حُفظت أو حُدثت إعدادات هذه الباقة بصورة مستقلة وستُستعاد بعد فتح البرنامج.";
         }
         catch (Exception ex) when (ex is ArgumentException or IOException or
             InvalidOperationException)

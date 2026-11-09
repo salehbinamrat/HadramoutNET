@@ -215,6 +215,44 @@ public sealed class PackageSettingsStore
         }
     }
 
+
+    /// <summary>
+    /// Save the current card creation/design/printing preset by name. Repeated
+    /// saves of the same router profile update its existing row atomically,
+    /// preserving the package ID and leaving every other package untouched.
+    /// Unlike SavePackage (create-or-update-by-ID), this is the UI save action.
+    /// </summary>
+    public long SaveOrUpdatePackage(
+        string name, IReadOnlyDictionary<string, JsonElement> settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        name = (name ?? "").Trim();
+        if (name.Length is < 1 or > 80)
+            throw new ArgumentException("اسم الباقة مطلوب، وبحد أقصى 80 حرفا.", nameof(name));
+
+        var payload = JsonSerializer.Serialize(CopyPreset(settings));
+        var timestamp = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture);
+
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO packages(name,settings_json,updated_at)
+            VALUES($name,$payload,$time)
+            ON CONFLICT(name) DO UPDATE SET
+                settings_json=excluded.settings_json,
+                updated_at=excluded.updated_at
+            RETURNING id
+            """;
+        command.Parameters.AddWithValue("$name", name);
+        command.Parameters.AddWithValue("$payload", payload);
+        command.Parameters.AddWithValue("$time", timestamp);
+        long id = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+        transaction.Commit();
+        return id;
+    }
+
     public PackagePreset? GetPackage(long id)
     {
         using var connection = OpenConnection();
