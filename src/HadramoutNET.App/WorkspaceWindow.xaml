@@ -213,8 +213,10 @@
                             <Button x:Name="UploadCardsButton"
                                     Content="رفع إلى MikroTik بعد التحقق"
                                     Width="240" Height="36" Margin="4"
-                                    Click="UploadCards_Click"
+                                    IsEnabled="False" Click="UploadCards_Click"
                                     Style="{StaticResource NavyReplacementButton}"/>
+                            <Button Content="سجل رفع الكروت" Width="150" Height="36"
+                                    Margin="4" Click="ShowDeliveryAudit_Click"/>
                             <Button Content="Excel" Width="95" Height="36"
                                     Click="ExportExcel_Click" Margin="4"/>
                             <Button Content="PDF" Width="100" Height="36"
