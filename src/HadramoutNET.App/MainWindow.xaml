@@ -9,8 +9,7 @@
         FontFamily="Arial" FontSize="14"
         FlowDirection="LeftToRight"
         Background="{StaticResource WindowSand}">
-    <!-- Test-only RouterOS read-only identity probe is available. Full login
-         remains gated until trial and licensing acceptance is complete. -->
+    <!-- Signed paid authorization or opted-in 480-hour trial precedes live RouterOS login. -->
     <Viewbox Stretch="Uniform" StretchDirection="DownOnly">
         <Grid Width="1248" Height="765" Background="{StaticResource WindowSand}" Margin="12">
             <Grid.ColumnDefinitions>
@@ -66,10 +65,10 @@
                                        VerticalAlignment="Center" Margin="15,0"/>
                         </DockPanel>
                     </Border>
-                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                    <ScrollViewer x:Name="LoginScrollViewer" VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="14,10" Orientation="Vertical">
-                        <Border BorderBrush="{StaticResource SandBorder}" BorderThickness="1"
+                        <Border x:Name="LicensePanel" BorderBrush="{StaticResource SandBorder}" BorderThickness="1"
                                 Background="White" Padding="12,10" Margin="0,0,0,10">
                             <StackPanel>
                                 <DockPanel>
@@ -77,17 +76,17 @@
                                                Foreground="{StaticResource DarkRed}"
                                                DockPanel.Dock="Right"/>
                                     <Button Content="التفاصيل" DockPanel.Dock="Left"
-                                            IsEnabled="False" Width="95" Height="32"/>
+                                            Click="LicenseDetails_Click" Width="95" Height="32"/>
                                 </DockPanel>
-                                <TextBlock Text="التجربة المجانية لمدة 20 يوماً (480 ساعة) تبدأ بعد أول اتصال ناجح بالراوتر."
+                                <TextBlock x:Name="TrialExplanationText" Text="التجربة المجانية لمدة 20 يوماً (480 ساعة) تبدأ بعد أول اتصال ناجح بالراوتر."
                                            TextWrapping="Wrap" Margin="0,10,0,7"
                                            FontSize="14" Foreground="{StaticResource TextMuted}"/>
-                                <TextBlock Text="رمز الترخيص من خدمة Supabase"
+                                <TextBlock x:Name="LicenseCodeLabel" Text="رمز الترخيص"
                                            Margin="0,8,0,4" FontWeight="Bold"
                                            Foreground="{StaticResource DarkRed}"/>
                                 <PasswordBox x:Name="LicenseCodeBox"
                                              Height="35" Margin="0,0,0,7"/>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
+                                <StackPanel x:Name="LicenseActionRow" Orientation="Horizontal" HorizontalAlignment="Center"
                                             Margin="0,0,0,7">
                                     <Button x:Name="ActivateLicenseButton"
                                             Content="تفعيل الرمز" Width="155" Height="34"
@@ -98,6 +97,10 @@
                                             Margin="4,0" Click="CheckLicense_Click"
                                             Style="{StaticResource NavyReplacementButton}"/>
                                 </StackPanel>
+                                <Button x:Name="RenewLicenseButton" Content="تجديد الترخيص"
+                                        Visibility="Collapsed" Click="RenewLicense_Click"
+                                        Height="35" Margin="0,0,0,8"
+                                        Style="{StaticResource NavyReplacementButton}"/>
                                 <TextBlock x:Name="LicenseStatusText"
                                            Text="لم يُفحص الترخيص بعد. لن يُفعّل الاتصال تلقائيا."
                                            FontSize="12" TextWrapping="Wrap"
@@ -112,14 +115,14 @@
                             </StackPanel>
                         </Border>
 
-                        <Border BorderBrush="{StaticResource SandBorder}" BorderThickness="1"
+                        <Border x:Name="ConnectionPanel" BorderBrush="{StaticResource SandBorder}" BorderThickness="1"
                                 Background="White" Padding="13,10">
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                     <RadioButton x:Name="LocalModeRadio" Content="محلي" IsChecked="True"
-                                                 GroupName="connection" Margin="12,5"/>
+                                                 GroupName="connection" Checked="ConnectionModeChanged" Margin="12,5"/>
                                     <RadioButton x:Name="RemoteModeRadio" Content="عن بُعد — رابط VPN"
-                                                 GroupName="connection" Margin="12,5"/>
+                                                 GroupName="connection" Checked="ConnectionModeChanged" Margin="12,5"/>
                                 </StackPanel>
                                 <Grid Margin="0,12,0,6">
                                     <Grid.ColumnDefinitions>
@@ -142,6 +145,7 @@
                                     <TextBlock Grid.Column="0" Text="اسم الدخول :" Style="{StaticResource CaptionText}"/>
                                     <TextBox x:Name="RouterUsernameBox" Grid.Column="1" Text="admin" Margin="5,0,10,0"/>
                                     <CheckBox x:Name="UseSslCheck" Grid.Column="2" Content="API-SSL"
+                                              Checked="SslChanged" Unchecked="SslChanged"
                                               VerticalAlignment="Center"/>
                                 </Grid>
                                 <Grid Margin="0,8,0,6">
@@ -151,20 +155,32 @@
                                         <ColumnDefinition Width="165"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="كلمة المرور :" Style="{StaticResource CaptionText}"/>
-                                    <PasswordBox x:Name="RouterPasswordBox" Grid.Column="1" Margin="5,0,10,0"/>
-                                    <CheckBox Grid.Column="2" Content="إظهار"
-                                              IsEnabled="False" VerticalAlignment="Center"/>
+                                    <Grid Grid.Column="1" Margin="5,0,10,0">
+                                        <PasswordBox x:Name="RouterPasswordBox"/>
+                                        <TextBox x:Name="RouterVisiblePasswordBox" Visibility="Collapsed"/>
+                                    </Grid>
+                                    <CheckBox x:Name="ShowPasswordCheck" Grid.Column="2" Content="إظهار"
+                                              Checked="ShowPasswordChanged" Unchecked="ShowPasswordChanged"
+                                              VerticalAlignment="Center"/>
                                 </Grid>
                                 <DockPanel Margin="0,12,0,8">
-                                    <CheckBox Content="حفظ بيانات الدخول" DockPanel.Dock="Right"
-                                              IsEnabled="False"/>
-                                    <CheckBox x:Name="VerifySslCheck" Content="التحقق من شهادة SSL" DockPanel.Dock="Left"/>
+                                    <CheckBox x:Name="SaveLoginCheck" Content="حفظ كلمة المرور بشكل محمي"
+                                              DockPanel.Dock="Right"/>
+                                    <CheckBox x:Name="VerifySslCheck" Content="التحقق من شهادة SSL"
+                                              IsChecked="True" IsEnabled="False" DockPanel.Dock="Left"/>
                                 </DockPanel>
-                                <ComboBox IsEnabled="False" Height="35"
-                                          Background="White"
-                                          BorderBrush="{StaticResource SandBorder}"/>
-                                <Button Content="⌄ محفوظات الاتصالات" Height="32"
-                                        IsEnabled="False" Margin="0,5,0,0"/>
+                                <ComboBox x:Name="SavedConnectionsCombo" Height="35"
+                                          DisplayMemberPath="Display"
+                                          SelectionChanged="SavedConnectionSelected"
+                                          Background="White" BorderBrush="{StaticResource SandBorder}"/>
+                                <Button x:Name="HistoryButton" Content="⌄ محفوظات الاتصالات" Height="32"
+                                        Click="ToggleHistory_Click" Margin="0,5,0,0"/>
+                                <StackPanel x:Name="HistoryArea" Visibility="Collapsed" Margin="0,5,0,0">
+                                    <ListBox x:Name="HistoryList" DisplayMemberPath="Display"
+                                             Height="100" SelectionChanged="HistorySelected"/>
+                                    <Button Content="حذف الاتصال المحدد من المحفوظات"
+                                            Click="ForgetConnection_Click" Height="30" Margin="0,5,0,0"/>
+                                </StackPanel>
                                 <TextBlock Text="أدخل منفذ API الخارجي من مزود الرابط. منفذ WinBox داخل الرابط لا يُستخدم تلقائياً."
                                            TextWrapping="Wrap"
                                            Foreground="{StaticResource TextMuted}"
@@ -175,9 +191,12 @@
                         <Button x:Name="RouterProbeButton" Content="اختبار اتصال MikroTik (للقراءة فقط)"
                                 Height="36" Margin="0,8,0,0" Click="TestConnection_Click"
                                 Style="{StaticResource NavyReplacementButton}"/>
-                        <Button x:Name="RouterLoginButton" Content="تسجيل الدخول" Height="48" Margin="0,8,0,0"
+                        <Button x:Name="RouterLoginButton" Content="اتصال / تسجيل الدخول" Height="48" Margin="0,8,0,0"
                                 Style="{StaticResource NavyReplacementButton}"
                                 Click="RouterLogin_Click"/>
+                        <Button x:Name="CancelLoginButton" Content="إلغاء الاتصال"
+                                Height="35" Margin="0,5,0,0" Visibility="Collapsed"
+                                Click="CancelLogin_Click"/>
                         <TextBlock x:Name="RouterProbeStatus" Text="اختبار الاتصال مستقل عن الدخول؛ لا يبدأ التجربة."
                                    Foreground="#A0283E" FontSize="13"
                                    TextWrapping="Wrap" TextAlignment="Center" Margin="5,9"/>
@@ -201,10 +220,10 @@
                         <TextBlock Text="القائمة الرئيسية" Foreground="#FFF2EC"
                                    FontSize="15" TextAlignment="Center" Margin="0,0,0,18"/>
                         <Border Height="1" Margin="12,0,12,10" Background="#E58D9B"/>
-                        <Button Content="تسجيل الدخول" Style="{StaticResource SidebarButton}" IsEnabled="False"/>
-                        <Button Content="الترخيص" Style="{StaticResource SidebarButton}" IsEnabled="False"/>
-                        <Button Content="حول البرنامج" Style="{StaticResource SidebarButton}" IsEnabled="False"/>
-                        <Button Content="خدمة العملاء" Style="{StaticResource SidebarButton}" IsEnabled="False"/>
+                        <Button Content="تسجيل الدخول" Style="{StaticResource SidebarButton}" Click="ShowLoginSection_Click"/>
+                        <Button Content="الترخيص" Style="{StaticResource SidebarButton}" Click="ShowLicenseSection_Click"/>
+                        <Button Content="حول البرنامج" Style="{StaticResource SidebarButton}" Click="About_Click"/>
+                        <Button Content="خدمة العملاء" Style="{StaticResource SidebarButton}" Click="Support_Click"/>
                     </StackPanel>
                 </DockPanel>
             </Border>
