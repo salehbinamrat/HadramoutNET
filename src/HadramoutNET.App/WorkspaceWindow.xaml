@@ -497,6 +497,10 @@
                                                    DockPanel.Dock="Right" Margin="4"/>
                                         <Button Content="تحديث الجلسات" Width="140" Height="36"
                                                 DockPanel.Dock="Left" Click="RefreshSessions_Click"/>
+                                        <Button x:Name="DisconnectSessionButton"
+                                                Content="فصل الجلسة المحددة" Width="170" Height="36"
+                                                Margin="6,0,0,0" DockPanel.Dock="Left"
+                                                Click="DisconnectSession_Click"/>
                                     </DockPanel>
                                     <DataGrid x:Name="SessionsGrid" Grid.Row="1"
                                               IsReadOnly="True" AutoGenerateColumns="False"
