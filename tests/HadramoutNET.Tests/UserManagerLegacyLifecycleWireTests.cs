@@ -56,7 +56,12 @@ public sealed class UserManagerLegacyLifecycleWireTests
             Assert.Contains("/tool/user-manager/profile/profile-limitation/print", countLinks);
             Assert.Contains("=count-only=yes", countLinks);
             if (denyLinks)
+            {
+                // RouterOS ends a trapped command with !done. Without it the
+                // TCP client must keep waiting and must not reuse the socket.
                 await Reply(stream, "!trap", "=message=not enough permissions");
+                await Reply(stream, "!done");
+            }
             else
             {
                 await Reply(stream, "!done", "=ret=1");
