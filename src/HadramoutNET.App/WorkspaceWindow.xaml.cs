@@ -60,6 +60,8 @@ public partial class WorkspaceWindow : Window
     private string? _legacySource;
     private LegacyImportReport? _legacyPreview;
     private int _legacyOffset;
+    // Keep the applied filter stable while users paginate or refresh the archive.
+    private string _legacyAppliedSearch = string.Empty;
     private const int LegacyPageSize = 100;
 
     private sealed record HotspotRow(
@@ -717,6 +719,13 @@ public partial class WorkspaceWindow : Window
         if (imported) await LoadLegacyHistoryAsync(0);
     }
 
+    private void SearchLegacy_Click(object sender, RoutedEventArgs e)
+    {
+        if (_legacyBusy || _legacyReading || !IsLoaded || !ConfirmCurrentAccess()) return;
+        _legacyAppliedSearch = LegacySearchBox.Text.Trim();
+        _ = LoadLegacyHistoryAsync(0);
+    }
+
     private void RefreshLegacy_Click(object sender, RoutedEventArgs e) =>
         _ = LoadLegacyHistoryAsync(0);
     private void PreviousLegacy_Click(object sender, RoutedEventArgs e) =>
@@ -734,10 +743,11 @@ public partial class WorkspaceWindow : Window
         LegacyPreviousButton.IsEnabled = false;
         LegacyNextButton.IsEnabled = false;
         LegacyPageText.Text = "جارٍ قراءة الأرشيف المستقل...";
+        string usernameSearch = _legacyAppliedSearch;
         try
         {
             LegacyHistoryPage page = await Task.Run(
-                () => new LegacyHistoryReader(LegacyNetDatabasePath()).ReadPage(offset, LegacyPageSize),
+                () => new LegacyHistoryReader(LegacyNetDatabasePath()).ReadPage(offset, LegacyPageSize, usernameSearch),
                 _cancel.Token);
             if (!IsLoaded) return;
             _legacyOffset = offset;
