@@ -174,12 +174,22 @@ public sealed class VoucherDeliveryJournalTests
             await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token); // identity
             await Send(stream, "!re", "=name=Router");
             await Send(stream, "!done");
+            var usersCount = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("/ip/hotspot/user/print", usersCount);
+            Assert.Contains("=count-only=yes", usersCount);
+            Assert.Equal("dispatching", Assert.Single(new VoucherDeliveryJournal(tmp.PathName).ReadRecent()).State);
+            await Send(stream, "!done", "=ret=0");
             var users = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
             Assert.Contains("/ip/hotspot/user/print", users);
-            Assert.Equal("dispatching", Assert.Single(new VoucherDeliveryJournal(tmp.PathName).ReadRecent()).State);
+            Assert.Contains("=.proplist=name", users);
             await Send(stream, "!done");
+            var profileCount = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("/ip/hotspot/user/profile/print", profileCount);
+            Assert.Contains("=count-only=yes", profileCount);
+            await Send(stream, "!done", "=ret=1");
             var profiles = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
             Assert.Contains("/ip/hotspot/user/profile/print", profiles);
+            Assert.Contains("=.proplist=name", profiles);
             await Send(stream, "!re", "=name=default");
             await Send(stream, "!done");
             var add = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
