@@ -298,13 +298,14 @@ public partial class WorkspaceWindow : Window
             }
 
             UserManagerLifecycleSnapshot snapshot = data.Snapshot!;
-            ApplyDashboardLifecycle(snapshot);
+            ApplyDashboardLifecycle(snapshot, data.LimitsVerified);
             int count = status == "expired" ? snapshot.Expired : snapshot.Active;
             WorkspaceStatus.Text =
                 $"قائمة {status}: {count:N0} من {snapshot.Total:N0} مستخدم " +
                 (data.Cached ? "(لقطة مخزنة مؤقتا)" : "(قراءة جديدة)") +
                 ". لا تُنفّذ أي عمليات حذف.";
-            var window = new UserManagerVoucherStatusWindow(this, snapshot, status);
+            var window = new UserManagerVoucherStatusWindow(
+                this, snapshot, status, data.LimitsWarning);
             window.ShowDialog();
         }
         catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
@@ -558,7 +559,8 @@ public partial class WorkspaceWindow : Window
         finally { _readingPpp = false; }
     }
 
-    private void ApplyDashboardLifecycle(UserManagerLifecycleSnapshot snapshot)
+    private void ApplyDashboardLifecycle(
+        UserManagerLifecycleSnapshot snapshot, bool limitsVerified = true)
     {
         DashboardActiveCardsValue.Text =
             snapshot.Active.ToString("N0", CultureInfo.InvariantCulture);
@@ -567,7 +569,12 @@ public partial class WorkspaceWindow : Window
         DashboardLifecycleNote.Text =
             $"User Manager {snapshot.Version}: {snapshot.Valid:N0} صالحة لم تبدأ، " +
             $"{snapshot.Unclassified:N0} غير مصنفة، " +
-            $"{snapshot.Disabled:N0} معطلة. التجديد والحذف غير تلقائيين.";
+            $"{snapshot.Disabled:N0} معطلة. " +
+            (limitsVerified ? "التجديد والحذف غير تلقائيين." :
+                "تنبيه: تعذرت قراءة حدود الباقات المرتبطة؛ راجع صلاحيات User Manager 6.");
+        DashboardLifecycleNote.ToolTip = limitsVerified ? null :
+            new UserManagerLifecycleReadResult(
+                "ready", snapshot, LimitsVerified: false).LimitsWarning;
     }
 
     private async Task RefreshDashboardLifecycleAsync(bool force = false)
@@ -590,7 +597,7 @@ public partial class WorkspaceWindow : Window
                     "تعذر اكتمال القراءة الموثوقة؛ ليست النتيجة صفرا. " + result.Status;
             }
             else
-                ApplyDashboardLifecycle(result.Snapshot!);
+                ApplyDashboardLifecycle(result.Snapshot!, result.LimitsVerified);
         }
         catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
         catch (Exception)
