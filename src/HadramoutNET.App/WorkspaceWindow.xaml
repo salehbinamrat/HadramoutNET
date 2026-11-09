@@ -227,6 +227,8 @@
                                     Click="VerifyUmDraft_Click"/>
                             <Button Content="Excel" Width="95" Height="36"
                                     Click="ExportExcel_Click" Margin="4"/>
+                            <Button Content="تخصيص تصميم الكرت" Width="175" Height="36"
+                                    Click="EditCardArtwork_Click" Margin="4"/>
                             <Button Content="إعدادات تخطيط الطباعة" Width="190" Height="36"
                                     Click="EditPrintLayout_Click" Margin="4"/>
                             <Button Content="معاينة الورقة" Width="145" Height="36"
