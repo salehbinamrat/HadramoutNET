@@ -80,3 +80,36 @@ the operator's original trusted export, a persisted per-card delivery
 record or hardware acceptance. The Hotspot/PPPoE reconcilers and
 per-stage User Manager creation-versus-profile-attachment audit remain
 future work. Do not merge/ship solely because read-only review passed.
+
+## Hotspot / PPPoE read-only restart review
+
+The same WPF manual audit action now supports persisted **Hotspot** and
+**PPPoE** attempts, alongside User Manager. An operator selects an
+unresolved attempt on the authenticated router, then supplies **only**
+the exact number of original usernames from a trusted export. The
+program performs *read-only* `/ip/hotspot/user/print` or
+`/ppp/secret/print` queries. A bounded `count-only=yes` preflight
+is compared with the final `.proplist` projection; duplicate or
+missing name fields, count mismatches, permissions failures or
+oversized router tables fail closed without claiming cards are absent.
+
+Only aggregate counts in allowlisted categories are saved to the
+separate append-only `voucher_delivery_standard_checks` table:
+`not_found`, `disabled`, `profile_matches`, `profile_other`,
+`profile_unknown`, and (PPPoE only) `service_other`. Exactly
+the original attempt's count must be observed. The insertion is
+atomic and bound to router identity, endpoint, service, batch size and
+unresolved audit state. Original `voucher_delivery_checks` (UM6/UM7)
+are not rebuilt or altered, so historical observations remain intact.
+
+A `profile_matches` result only means the CURRENT router snapshot
+contains an enabled account with the expected profile (and for PPP
+the `pppoe` service value). It never means the recorded upload
+caused the account, that credentials are valid, or that a session has
+been authenticated. No passwords are read or persisted. Account
+statuses can change immediately after a read. An operator may supply
+wrong usernames; the app cannot prove their origin.
+
+The action never retries, deletes, edits, activates or creates remote
+accounts, and never reclassifies an old failed/uncertain audit record
+to success. On-router hardware acceptance remains outstanding.
