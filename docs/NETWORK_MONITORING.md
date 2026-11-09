@@ -57,17 +57,19 @@ SHA, including compilation of the WPF UI.
   changed identity refusing the remove, an exact single remove,
   PPPoE lost acknowledgment, rejected trap and invalid service/ID.
 - This remains a deliberately narrow maintenance operation. A
-  read-check/write sequence is not atomic against other router users;
-  RouterOS v6/v7 hardware acceptance and audit/reconciliation are still
-  necessary before production release.
+  read-check/write sequence is not atomic against other router users.
+  Targeted-session attempts are now durably audited (see
+  `docs/MAINTENANCE_AUDIT.md`); hardware acceptance, tamper protection
+  and post-operation reconciliation remain required before release.
 
 ## Work still required before full Python parity
 
 - RouterOS v6/v7 hardware tests with restricted API accounts and high
   loads; TLS certificate verification and real network access.
 - Other original two-confirmation maintenance actions, safe temporary
-  Hotspot-mode recording/recovery, complete post-write state rechecks
-  and durable audit logs.
+  Hotspot-mode recording/recovery, complete post-write state rechecks,
+  centralized/tamper-evident audit and durable audits for card publication
+  and other maintenance operations.
 - User/account maintenance, richer reports, live print-template parity
   and four Windows packages only **after** full release acceptance.
 - An explicit, safe recovery plan for lost acknowledgments; never retry
