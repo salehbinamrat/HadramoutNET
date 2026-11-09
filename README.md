@@ -1,38 +1,39 @@
 # حضرموت — HadramoutNET
 
-**Status: port in progress, not a working release.**
+**الحالة: مشروع ترحيل إلى C#/.NET 10 قيد التطوير. غير جاهز للإصدار التجاري أو الدمج النهائي.**
 
-An independent C#/.NET 10 migration of the existing Hadramout
-MikroTik vouchers/cards application. The original repository is
-`salehbinamrat/Hadramout`; it is read-only for this project and has
-not been changed.
+برنامج Windows مستقل عن مشروع Python الأصلي
+[`salehbinamrat/Hadramout`](https://github.com/salehbinamrat/Hadramout).
+يهدف إلى الحفاظ على وظائف حضرموت وواجهاته العربية واتجاه RTL مع تغيير اللون الكحلي فقط إلى الأحمر اللماع. لا يتم تغيير مستودع البرنامج الأصلي.
 
-The application is intended to preserve the existing Arabic/RTL UI,
-commands, card creation and printing, database, licensing and 480-hour
-trial, with only the navy color scheme replaced by glossy red.
-No functionality or interoperability is claimed until regression tests
-confirm the complete behavior.
+## المصدر المرجعي الثابت
 
-## Current implementation
-
-- RouterOS word framing, command exchange, address parsing and read/write safety guard in `src/HadramoutNET.Core`. The API transport layer is not yet integrated into a working desktop login.
-- Card-generation core and documented validation rules.
-- Standalone transactional SQLite package settings store (`PackageSettingsStore`) with independent local app data path, Arabic JSON preservation, duplicate prevention and package switching tests. This is **not** a completed Python schema-v8 migration; it is not yet connected to WPF screens.
-- Color tokens and a **visual-only, disabled** glossy-red WPF login foundation. No live login, trial activation, or licensing button is enabled.
-- Tests are under `tests/HadramoutNET.Tests`; Windows Core and Windows
-  Release x86/x64 launch in parallel, all before packaging.
-- Original Python reference in `reference/python-v1.1.3` pinned at
+- نسخة للقراءة فقط من **63/63 ملف مصدر** من Python 1.1.3 محفوظة تحت
+  `reference/python-v1.1.3`، بالالتزام الأصلي
   `bdfb355b1dbaf8f868d811ea55d4c1af26eb3a37`.
-- **63 of 63 original source files copied byte-for-byte**, including the two large PNG assets, with all Git blob SHA values verified. See `docs/SOURCE_COPY_STATUS.md` and `docs/SOURCE_MANIFEST.json`.
+- يتحقق Windows Core من بصمات Git للملفات المرجعية.
+- لا تُنسخ قواعد بيانات العملاء أو ملفات ترخيصهم أو مفاتيحهم إلى المستودع.
 
-## Test locally
+## المنفذ فعليا حتى الآن
+
+- تسجيل دخول فعلي إلى MikroTik عبر RouterOS API، وجلسة مصادق عليها مرتبطة بصلاحية الترخيص أو تجربة الـ480 ساعة. التحقق من الترخيص المدفوع عبر موجز Supabase موقّع كما في الأصل. البيانات الحساسة لا تحفظ في السجلات.
+- لوحة معلومات تقرأ الموارد والجلسات وأعداد Hotspot وPPP وUser Manager. اختلافات User Manager v6/v7 معالجة مع منع التراجع عند نقص الصلاحية.
+- إنشاء مسودات كروت، تصدير Excel وCSV وRouterOS script وPDF أولي، وطباعة Windows أصلية أولية. رفع الكروت في Hotspot وPPPoE وUser Manager بموافقة صريحة، والتحقق المسبق من الأسماء والباقات ووقف إعادة المحاولة عند تسليم غير مؤكد.
+- عرض مستخدمي Hotspot وحسابات PPPoE، وقوائم User Manager وباقاته، وحفظ إعدادات إنشاء الكروت لكل باقة في SQLite مستقل.
+- **استيراد الأرشيف القديم اختياريا:** اختيار قاعدة SQLite v8، فحص ومعاينة أعداد السجلات أولا دون إنشاء أي قاعدة هدف، ثم تأكيد مستقل قبل الاستيراد لمرة واحدة. يعزل السجلات في جداول `legacy_*`، ولا يستورد أسرار الراوتر أو بيانات الترخيص. تعرض شاشة الأرشيف القديمة الكروت على صفحات دون إظهار كلمات مرورها.
+
+## الاختبارات
+
+يجري تشغيل Windows Core وWindows Release x86 وx64 بالتوازي على الالتزام نفسه؛ الاختبارات تسبق أي تغليف. اختبارات RouterOS تستخدم خادم TCP اختباريا يحاكي البروتوكول، واختبارات SQLite تتحقق من القواعد المرجعية وWAL وسلامة الاستيراد، ولا تعادل اختبارات أجهزة العملاء الحقيقية.
 
 ```powershell
 dotnet restore tests/HadramoutNET.Tests/HadramoutNET.Tests.csproj
 dotnet test tests/HadramoutNET.Tests/HadramoutNET.Tests.csproj -c Release
+dotnet build src/HadramoutNET.App/HadramoutNET.App.csproj -c Release -warnaserror
 ```
 
-Release artifacts, installer and full feature parity are **not yet available**.
-Do not merge this work-in-progress PR or distribute a binary. The target
-is four validated Windows packages only after completing all services and
-acceptance tests. .NET 10 does not support Windows 7 or Windows 8/8.1.
+## شروط الإكمال قبل الإصدار
+
+ما زال يلزم تكامل جميع عمليات إدارة المستخدمين والباقات والخدمات والشبكات، تصميم الكروت الأصلي وتخصيصه ومعاينته بدقة، تقارير كاملة، فحوص أجهزة Windows/RouterOS والطابعات الفعلية، وثبات استكمال تجربة الـ480 ساعة في أجهزة العملاء. لا تتحول سجلات الأرشيف القديم تلقائيا إلى حسابات أو كروت نشطة في البرنامج الجديد.
+
+**لا تدمج PR #1 ولا توزع نسخة نهائية** قبل اكتمال التكافؤ والاختبارات. بعد القبول، أنشئ أربع نسخ موثقة مع SHA-256: x86 Portable وInstaller وx64 Portable وInstaller. يستخدم المشروع .NET 10 على Windows الحديثة؛ Windows 7/8/8.1 يحتاج تصميما منفصلا.
