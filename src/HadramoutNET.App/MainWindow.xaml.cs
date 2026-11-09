@@ -92,7 +92,8 @@ public partial class MainWindow : Window
         RouterLoginButton.IsEnabled = false;
         var request = new RouterLoginRequest(
             RouterHostBox.Text, RouterPortBox.Text, RouterUsernameBox.Text,
-            RouterPasswordBox.Password,
+            AsciiNumerals.PasswordForRouter(RouterPasswordBox.Password,
+                NormalizePasswordDigitsCheck.IsChecked == true),
             TrialOptIn: _trialOptedIn,
             UseSsl: UseSslCheck.IsChecked == true,
             VerifySsl: VerifySslCheck.IsChecked == true,
@@ -154,7 +155,8 @@ public partial class MainWindow : Window
             RouterHostBox.Text,
             RouterPortBox.Text,
             RouterUsernameBox.Text,
-            RouterPasswordBox.Password,
+            AsciiNumerals.PasswordForRouter(RouterPasswordBox.Password,
+                NormalizePasswordDigitsCheck.IsChecked == true),
             UseSsl: UseSslCheck.IsChecked == true,
             VerifySsl: VerifySslCheck.IsChecked == true,
             ConnectionMode: RemoteModeRadio.IsChecked == true ? "remote" : "local");

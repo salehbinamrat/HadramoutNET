@@ -6,6 +6,9 @@ namespace HadramoutNET.Core.RouterOS;
 /// </summary>
 public static class AsciiNumerals
 {
+    public static string PasswordForRouter(string password, bool convertDigits) =>
+        convertDigits ? Normalize(password) : password;
+
     public static string Normalize(string? value)
     {
         if (value is null) return string.Empty;

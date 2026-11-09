@@ -145,7 +145,8 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="اسم الدخول :" Style="{StaticResource CaptionText}"/>
                                     <TextBox x:Name="RouterUsernameBox" Grid.Column="1" Text="admin" Margin="5,0,10,0"
-                                              FlowDirection="LeftToRight" TextAlignment="Left" Language="en-US"/>
+                                              FlowDirection="LeftToRight" TextAlignment="Left" Language="en-US"
+                                              TextChanged="RouterNumericInput_TextChanged"/>
                                     <CheckBox x:Name="UseSslCheck" Grid.Column="2" Content="API-SSL"
                                               VerticalAlignment="Center"/>
                                 </Grid>
@@ -161,6 +162,10 @@
                                     <CheckBox Grid.Column="2" Content="إظهار"
                                               IsEnabled="False" VerticalAlignment="Center"/>
                                 </Grid>
+                                <CheckBox x:Name="NormalizePasswordDigitsCheck"
+                                          Content="تحويل الأرقام العربية في كلمة المرور إلى الإنجليزية"
+                                          IsChecked="True" Margin="2,4,2,0" FontSize="12"
+                                          ToolTip="ألغ الخيار إذا كانت أرقام كلمة مرور الراوتر العربية مقصودة."/>
                                 <DockPanel Margin="0,12,0,8">
                                     <CheckBox Content="حفظ بيانات الدخول" DockPanel.Dock="Right"
                                               IsEnabled="False"/>
