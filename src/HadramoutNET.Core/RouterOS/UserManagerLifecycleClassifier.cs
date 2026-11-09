@@ -41,7 +41,8 @@ public static partial class UserManagerLifecycleClassifier
     public static UserManagerLifecycleSnapshot Classify(
         int version,
         IReadOnlyList<IReadOnlyDictionary<string, string>> users,
-        IReadOnlyList<IReadOnlyDictionary<string, string>> assignments)
+        IReadOnlyList<IReadOnlyDictionary<string, string>> assignments,
+        IReadOnlyDictionary<string, long>? legacyProfileTransferLimits = null)
     {
         if (version is not (6 or 7))
             throw new ArgumentException("User Manager version must be 6 or 7.", nameof(version));
@@ -89,6 +90,11 @@ public static partial class UserManagerLifecycleClassifier
             long up = ParseBytes(Get(row, "total-upload-used", "upload-used"));
             long used = down > long.MaxValue - up ? long.MaxValue : down + up;
             long limit = ParseBytes(Get(row, "transfer-limit"));
+            if (version == 6 && limit == 0 && profile.Length != 0 &&
+                legacyProfileTransferLimits is not null &&
+                legacyProfileTransferLimits.TryGetValue(profile, out long linked) &&
+                linked > 0)
+                limit = linked;
             string state, reason;
 
             if (Flag(Get(row, "disabled")))
