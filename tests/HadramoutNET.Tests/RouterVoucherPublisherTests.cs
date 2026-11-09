@@ -78,6 +78,10 @@ public sealed class RouterVoucherPublisherTests
             await Send(stream, "!done");
             await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
             await Send(stream, "!done");
+            var count = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("/ip/hotspot/user/print", count);
+            Assert.Contains("=count-only=yes", count);
+            await Send(stream, "!done", "=ret=1");
             var list = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
             Assert.Contains("/ip/hotspot/user/print", list);
             Assert.Contains("=.proplist=name", list);
@@ -112,10 +116,18 @@ public sealed class RouterVoucherPublisherTests
             await Send(stream, "!re", "=name=Verified");
             await Send(stream, "!done");
 
+            var count = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("/ip/hotspot/user/print", count);
+            Assert.Contains("=count-only=yes", count);
+            await Send(stream, "!done", "=ret=1");
             var list = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
             Assert.Contains("/ip/hotspot/user/print", list);
             await Send(stream, "!re", "=name=other-user");
             await Send(stream, "!done");
+            var profileCount = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("/ip/hotspot/user/profile/print", profileCount);
+            Assert.Contains("=count-only=yes", profileCount);
+            await Send(stream, "!done", "=ret=1");
             var profiles = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
             Assert.Contains("/ip/hotspot/user/profile/print", profiles);
             await Send(stream, "!re", "=name=default");
@@ -157,9 +169,17 @@ public sealed class RouterVoucherPublisherTests
             await Send(stream, "!done");
             await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
             await Send(stream, "!done");
-            await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            var usersCount = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("=count-only=yes", usersCount);
+            await Send(stream, "!done", "=ret=0");
+            var users = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("=.proplist=name", users);
             await Send(stream, "!done"); // Empty user list.
-            await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            var profilesCount = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("=count-only=yes", profilesCount);
+            await Send(stream, "!done", "=ret=1");
+            var profiles = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
+            Assert.Contains("=.proplist=name", profiles);
             await Send(stream, "!re", "=name=default");
             await Send(stream, "!done");
             Assert.Contains("=name=voucher001",
