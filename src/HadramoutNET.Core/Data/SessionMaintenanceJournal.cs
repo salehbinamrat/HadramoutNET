@@ -12,11 +12,21 @@ namespace HadramoutNET.Core.Data;
 public sealed record SessionMaintenanceAuditEntry(
     long Id, string CreatedAtUtc, string RouterIdentity,
     string RouterEndpoint, string Service, string RecordId,
-    string Username, string Address, string State, string Outcome)
+    string Username, string Address, string State, string Outcome,
+    string LastObservation = "not_checked", string LastObservedUtc = "")
 {
     /// <summary>Lost ACK or process termination requires human inspection.</summary>
     public bool RequiresManualReconciliation =>
         State is "started" or "dispatching" or "uncertain";
+
+    public string LastObservationLabel => LastObservation switch
+    {
+        "observed_absent" => "الجلسة لم تعد ظاهرة — السبب غير مؤكد",
+        "observed_present" => "الجلسة ما زالت متصلة",
+        "observed_changed" => "تغيرت هوية الجلسة أو معرفها",
+        "unavailable" => "تعذرت قراءة الحالة",
+        _ => "لم يُجرَ تحقق بعد"
+    };
 
     public string StateLabel => State switch
     {
@@ -28,6 +38,9 @@ public sealed record SessionMaintenanceAuditEntry(
         _ => "حالة غير معروفة"
     };
 }
+
+public sealed record SessionAuditCheck(
+    long Id, long AttemptId, string ObservedUtc, string Observation);
 
 /// <summary>
 /// Append-only attempt identities with restrictive atomic state transitions.
@@ -79,6 +92,15 @@ public sealed class SessionMaintenanceJournal
             );
             CREATE INDEX IF NOT EXISTS ix_maintenance_audit_recent
                 ON maintenance_audit(id DESC);
+            CREATE TABLE IF NOT EXISTS maintenance_reconciliation (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                attempt_id INTEGER NOT NULL REFERENCES maintenance_audit(id),
+                observed_utc TEXT NOT NULL,
+                observation TEXT NOT NULL CHECK(observation IN
+                    ('observed_absent','observed_present','observed_changed','unavailable'))
+            );
+            CREATE INDEX IF NOT EXISTS ix_maintenance_reconciliation_attempt
+                ON maintenance_reconciliation(attempt_id,id DESC);
             """;
         command.ExecuteNonQuery();
     }
@@ -156,32 +178,96 @@ public sealed class SessionMaintenanceJournal
             throw new InvalidOperationException("لا يمكن إكمال سجل تدقيق منتهي أو في حالة خاطئة.");
     }
 
-    /// <summary>Bounded read only; does not return credentials or raw exceptions.</summary>
+    /// <summary>
+    /// Append a factual read observation without changing the original
+    /// disconnect's accepted/rejected/uncertain outcome. No automatic replay.
+    /// </summary>
+    public void AppendCheck(long attemptId, string observation)
+    {
+        if (attemptId <= 0) throw new ArgumentOutOfRangeException(nameof(attemptId));
+        if (observation is not ("observed_absent" or "observed_present" or
+            "observed_changed" or "unavailable"))
+            throw new ArgumentException("رمز الملاحظة غير مصرح به.", nameof(observation));
+
+        using var db = Open();
+        using var command = db.CreateCommand();
+        command.CommandText = """
+            INSERT INTO maintenance_reconciliation(attempt_id,observed_utc,observation)
+            SELECT id,$time,$observation FROM maintenance_audit WHERE id=$id
+            """;
+        command.Parameters.AddWithValue("$id", attemptId);
+        command.Parameters.AddWithValue("$time",
+            DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$observation", observation);
+        if (command.ExecuteNonQuery() != 1)
+            throw new InvalidOperationException("سجل العملية المحدد غير موجود.");
+    }
+
+    public IReadOnlyList<SessionAuditCheck> ReadChecks(long attemptId, int limit = 20)
+    {
+        if (attemptId <= 0) throw new ArgumentOutOfRangeException(nameof(attemptId));
+        if (limit is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(limit));
+        using var db = Open(readOnly: true);
+        using var command = db.CreateCommand();
+        command.CommandText = """
+            SELECT id,attempt_id,observed_utc,observation
+            FROM maintenance_reconciliation
+            WHERE attempt_id=$id ORDER BY id DESC LIMIT $limit
+            """;
+        command.Parameters.AddWithValue("$id", attemptId);
+        command.Parameters.AddWithValue("$limit", limit);
+        using var reader = command.ExecuteReader();
+        var result = new List<SessionAuditCheck>();
+        while (reader.Read())
+            result.Add(new SessionAuditCheck(reader.GetInt64(0),reader.GetInt64(1),
+                reader.GetString(2),reader.GetString(3)));
+        return result;
+    }
+
+    private const string EntrySelection = """
+        SELECT a.id,a.created_utc,a.router_identity,a.router_endpoint,
+               a.service,a.record_id,a.username,a.address,a.state,a.outcome,
+               COALESCE((SELECT x.observation FROM maintenance_reconciliation x
+                   WHERE x.attempt_id=a.id ORDER BY x.id DESC LIMIT 1),'not_checked'),
+               COALESCE((SELECT x.observed_utc FROM maintenance_reconciliation x
+                   WHERE x.attempt_id=a.id ORDER BY x.id DESC LIMIT 1),'')
+        FROM maintenance_audit a
+        """;
+
+    public SessionMaintenanceAuditEntry? GetAttempt(long attemptId)
+    {
+        if (attemptId <= 0) return null;
+        using var db = Open(readOnly: true);
+        using var command = db.CreateCommand();
+        command.CommandText = EntrySelection + " WHERE a.id=$id";
+        command.Parameters.AddWithValue("$id", attemptId);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadEntry(reader) : null;
+    }
+
+    /// <summary>
+    /// Bounded read. Each row includes only the latest observation; individual
+    /// reconciliation events remain append-only in the separate table.
+    /// </summary>
     public IReadOnlyList<SessionMaintenanceAuditEntry> ReadRecent(int limit = 100)
     {
         if (limit is < 1 or > 500)
             throw new ArgumentOutOfRangeException(nameof(limit));
         using var db = Open(readOnly: true);
         using var command = db.CreateCommand();
-        command.CommandText = """
-            SELECT id,created_utc,router_identity,router_endpoint,
-                   service,record_id,username,address,state,outcome
-            FROM maintenance_audit ORDER BY id DESC LIMIT $limit
-            """;
+        command.CommandText = EntrySelection + " ORDER BY a.id DESC LIMIT $limit";
         command.Parameters.AddWithValue("$limit", limit);
         using var reader = command.ExecuteReader();
         var entries = new List<SessionMaintenanceAuditEntry>();
-        while (reader.Read())
-        {
-            entries.Add(new SessionMaintenanceAuditEntry(
-                reader.GetInt64(0), reader.GetString(1),
-                reader.GetString(2), reader.GetString(3),
-                reader.GetString(4), reader.GetString(5),
-                reader.GetString(6), reader.GetString(7),
-                reader.GetString(8), reader.GetString(9)));
-        }
+        while (reader.Read()) entries.Add(ReadEntry(reader));
         return entries;
     }
+
+    private static SessionMaintenanceAuditEntry ReadEntry(SqliteDataReader reader) =>
+        new(reader.GetInt64(0),reader.GetString(1),reader.GetString(2),
+            reader.GetString(3),reader.GetString(4),reader.GetString(5),
+            reader.GetString(6),reader.GetString(7),reader.GetString(8),
+            reader.GetString(9),reader.GetString(10),reader.GetString(11));
 
     private SqliteConnection Open(bool readOnly = false)
     {
@@ -191,6 +277,7 @@ public sealed class SessionMaintenanceJournal
             Mode = readOnly ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWrite,
             Pooling = false,
             Cache = SqliteCacheMode.Private,
+            ForeignKeys = true,
             DefaultTimeout = 10
         }.ToString());
         db.Open();
