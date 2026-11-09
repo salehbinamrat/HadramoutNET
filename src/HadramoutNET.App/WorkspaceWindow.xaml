@@ -196,6 +196,11 @@
                             <Button Content="توليد مسودة" Width="130" Height="36"
                                     Click="GenerateCards_Click" Margin="4"
                                     Style="{StaticResource NavyReplacementButton}"/>
+                            <Button x:Name="UploadCardsButton"
+                                    Content="رفع إلى MikroTik بعد التحقق"
+                                    Width="240" Height="36" Margin="4"
+                                    Click="UploadCards_Click"
+                                    Style="{StaticResource NavyReplacementButton}"/>
                             <Button Content="Excel" Width="95" Height="36"
                                     Click="ExportExcel_Click" Margin="4"/>
                             <Button Content="CSV" Width="90" Height="36"

@@ -29,6 +29,9 @@ public partial class WorkspaceWindow : Window
     private readonly DispatcherTimer _heartbeat = new();
     private readonly CancellationTokenSource _cancel = new();
     private IReadOnlyList<Voucher> _generated = [];
+    private bool _published;
+    private bool _uploading;
+    private readonly RouterVoucherPublisher _publisher = new();
     private PackageSettingsStore? _packages;
     private bool _checking;
     private bool _refreshing;
@@ -198,6 +201,7 @@ public partial class WorkspaceWindow : Window
             // This is a LOCAL draft. A remote uniqueness and profile check is
             // mandatory before actually importing it to the router.
             _generated = VoucherGenerator.Generate(options, _ => false);
+            _published = false;
             CardGrid.ItemsSource = _generated;
             CardsNotice.Text = $"تم إنشاء {_generated.Count} مسودة؛ لم ترفع إلى MikroTik.";
             WorkspaceStatus.Text = "راجع الأرقام وكلمات المرور قبل تصدير أي ملف.";
@@ -205,6 +209,61 @@ public partial class WorkspaceWindow : Window
         catch (Exception ex) when (ex is CardGenerationException or ArgumentException)
         {
             CardsNotice.Text = ex.Message;
+        }
+    }
+
+    private async void UploadCards_Click(object sender, RoutedEventArgs e)
+    {
+        if (_uploading || !ConfirmCurrentAccess()) return;
+        if (_generated.Count == 0 || _published)
+        {
+            CardsNotice.Text = _published ? "هذه المسودة تم رفعها بالفعل، لا تعِد إرسالها." :
+                "أنشئ مسودة كروت قبل الرفع.";
+            return;
+        }
+        string service = Choice(CardServiceCombo);
+        string profile = CardProfileBox.Text.Trim();
+        MessageBoxResult confirmed = MessageBox.Show(this,
+            $"سيُرسل {_generated.Count} كرت إلى {service} بالباقة «{profile}».\n" +
+            "سيُفحص عدم التكرار وصلاحية الباقة قبل البدء.\n" +
+            "قد يحتاج أي فشل جزئي إلى مراجعة الكروت الموجودة يدويا.\n" +
+            "هل تؤكد رفع هذه المسودة؟",
+            "تأكيد رفع الكروت إلى MikroTik",
+            MessageBoxButton.YesNo, MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        if (confirmed != MessageBoxResult.Yes) return;
+
+        _uploading = true;
+        UploadCardsButton.IsEnabled = false;
+        CardsNotice.Text = "جارٍ فحص المستخدمين والباقة ثم الرفع بدون تكرار تلقائي...";
+        try
+        {
+            VoucherPublishReport result = await _publisher.PublishAsync(
+                _session, _generated,
+                new VoucherPublishOptions(service, profile, Confirmed: true),
+                _cancel.Token);
+            if (!IsLoaded) return;
+            if (result.Success) _published = true;
+            CardsNotice.Text = result.Message +
+                $" — تمت إضافة {result.Added} من {result.Attempted}.";
+            if (!result.Success && result.Added > 0)
+                MessageBox.Show(this,
+                    "تمت إضافة بعض الكروت، لكن العملية لم تكتمل.\n" +
+                    "الأسماء المؤكدة: " + string.Join("، ", result.AddedUsernames.Take(12)) +
+                    (result.Added > 12 ? "..." : "") +
+                    "\nراجع المستخدمين على MikroTik قبل إعادة الرفع.",
+                    "رفع جزئي — يلزم المصالحة",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        catch (Exception)
+        {
+            if (IsLoaded)
+                CardsNotice.Text = "تعذر الرفع؛ تحقق من المستخدمين في الراوتر قبل محاولة جديدة.";
+        }
+        finally
+        {
+            _uploading = false;
+            if (IsLoaded) UploadCardsButton.IsEnabled = true;
         }
     }
 
@@ -226,7 +285,7 @@ public partial class WorkspaceWindow : Window
                 ["profile"] = profile,
                 ["service"] = service,
                 ["server"] = "all",
-                ["status"] = "draft",
+                ["status"] = _published ? "published" : "draft",
                 ["created_at"] = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:sszzz",
                     CultureInfo.InvariantCulture)
             }).ToList();
