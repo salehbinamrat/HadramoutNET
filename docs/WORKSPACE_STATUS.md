@@ -24,9 +24,13 @@ yet a complete recreation of all the original Python program's services.
 - Hotspot users: read-only table with name, profile, disabled, limits.
   Passwords are not requested from RouterOS.
 - Create cards: secure local username/password draft generation,
-  Excel, CSV and guarded .rsc exports. These drafts are **not uploaded**
-  and could duplicate usernames already on a router: review the guarded
-  script and verify remote profile uniqueness before any import.
+  Excel, CSV and guarded .rsc exports. A separate explicit button permits
+  **confirmed Hotspot or PPP publication**, preflight-reading only live usernames
+  and profiles. Duplicates or unknown profiles refuse the batch before writes.
+  Per-card RouterOS traps stop delivery and uncertain transport responses
+  NEVER trigger automatic retries. Partial changes require manual reconciliation.
+  User Manager v6/v7 remote provisioning and full durable operation audit
+  are still unimplemented.
 - Package settings: explicit local SavePackage/LoadPackage, persisted
   in HadramoutNET's own SQLite store, not Python's original database.
 - Logout: close active RouterOS socket and return to protected login.
