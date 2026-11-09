@@ -31,7 +31,9 @@ public partial class WorkspaceWindow : Window
     private readonly RouterNetworkInventory _networkInventory = new();
     private SessionMaintenanceJournal? _maintenanceAudit;
     private RouterSessionDisconnect? _sessionDisconnect;
+    private RouterSessionReconciler? _sessionReconciler;
     private bool _readingMaintenanceAudit;
+    private bool _recheckingSession;
     private readonly DispatcherTimer _heartbeat = new();
     private readonly CancellationTokenSource _cancel = new();
     private IReadOnlyList<Voucher> _generated = [];
@@ -85,7 +87,9 @@ public partial class WorkspaceWindow : Window
             // remote disconnect. Failure leaves its UI button disabled.
             _maintenanceAudit = new SessionMaintenanceJournal(databasePath);
             _sessionDisconnect = new RouterSessionDisconnect(_maintenanceAudit);
+            _sessionReconciler = new RouterSessionReconciler(_maintenanceAudit);
             DisconnectSessionButton.IsEnabled = true;
+            RecheckSessionButton.IsEnabled = true;
             ReloadPackages();
         }
         catch (Exception)
@@ -849,6 +853,62 @@ public partial class WorkspaceWindow : Window
     }
 
 
+
+    private async void RecheckSession_Click(object sender, RoutedEventArgs e)
+    {
+        if (_recheckingSession || _readingMaintenanceAudit || _disconnectingSession ||
+            !IsLoaded || !ConfirmCurrentAccess()) return;
+        if (_sessionReconciler is null)
+        {
+            MaintenanceAuditNotice.Text =
+                "تعذر تهيئة سجل التدقيق؛ لا يمكن تنفيذ التحقق.";
+            return;
+        }
+        if (MaintenanceAuditGrid.SelectedItem is not SessionMaintenanceAuditEntry selected)
+        {
+            MaintenanceAuditNotice.Text =
+                "اختر عملية واحدة من سجل التدقيق للتحقق من حالة جلستها.";
+            return;
+        }
+
+        _recheckingSession = true;
+        RecheckSessionButton.IsEnabled = false;
+        MaintenanceAuditGrid.IsEnabled = false;
+        MaintenanceAuditNotice.Text =
+            "جارٍ إعادة فحص الجلسة المحددة بالقراءة فقط، دون فصل أو تعديل...";
+        try
+        {
+            var result = await _sessionReconciler.CheckAsync(
+                _session, selected.Id, _cancel.Token);
+            if (!IsLoaded) return;
+            if (!ConfirmCurrentAccess()) return;
+            if (result.Checked)
+                await LoadMaintenanceAuditAsync();
+            MaintenanceAuditNotice.Text = result.Message +
+                " لا يثبت هذا الفحص أن أمر الفصل القديم كان سبب اختفاء الجلسة.";
+        }
+        catch (OperationCanceledException) when (_cancel.IsCancellationRequested)
+        {
+            if (IsLoaded)
+                MaintenanceAuditNotice.Text =
+                    "انقطع فحص الحالة؛ قد لا تتوفر ملاحظة جديدة. لم يُرسل أمر فصل.";
+        }
+        catch (Exception)
+        {
+            if (IsLoaded)
+                MaintenanceAuditNotice.Text =
+                    "تعذر فحص السجل؛ لم يُرسل أي أمر تعديل إلى الراوتر.";
+        }
+        finally
+        {
+            _recheckingSession = false;
+            if (IsLoaded)
+            {
+                RecheckSessionButton.IsEnabled = _sessionReconciler is not null;
+                MaintenanceAuditGrid.IsEnabled = true;
+            }
+        }
+    }
 
     private void RefreshMaintenanceAudit_Click(object sender, RoutedEventArgs e) =>
         _ = LoadMaintenanceAuditAsync();
