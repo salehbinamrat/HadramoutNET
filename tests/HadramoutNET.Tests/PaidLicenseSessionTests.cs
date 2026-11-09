@@ -23,8 +23,8 @@ public sealed class PaidLicenseSessionTests
     {
         var session = new PaidLicenseSession();
         session.RecordAttempt(Active(), TimeSpan.Zero);
-        Assert.True(session.StatusAt(TimeSpan.FromSeconds(1800)).Permitted);
         Assert.False(session.NeedsCheck(true, TimeSpan.FromSeconds(1799)));
+        Assert.True(session.StatusAt(TimeSpan.FromSeconds(1800)).Permitted);
         Assert.True(session.NeedsCheck(true, TimeSpan.FromSeconds(1800)));
         Assert.True(session.StatusAt(TimeSpan.FromSeconds(1820)).Permitted);
         Assert.False(session.StatusAt(TimeSpan.FromSeconds(1821)).Permitted);
