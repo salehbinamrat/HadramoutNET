@@ -38,8 +38,8 @@ public sealed class RouterDashboardReader
             "Hotspot active", errors, cancellationToken).ConfigureAwait(false);
         int? ppp = await CountAsync(session, "/ppp/active/print",
             "PPP", errors, cancellationToken).ConfigureAwait(false);
-        int? um = await CountAsync(session, "/tool/user-manager/user/print",
-            "User Manager", errors, cancellationToken).ConfigureAwait(false);
+        int? um = await CountUserManagerAsync(
+            session, errors, cancellationToken).ConfigureAwait(false);
 
         int? cpu = resource is not null && resource.TryGetValue("cpu-load", out string? load)
             ? ToPercent(load) : null;
@@ -98,6 +98,46 @@ public sealed class RouterDashboardReader
             unavailable.Add(label);
             return null;
         }
+    }
+
+    private static async Task<int?> CountUserManagerAsync(
+        RouterAuthorizedSession session, List<string> unavailable,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Keep the existing RouterOS 6 path as the fast path, and fall
+            // back to v7 only when this command is genuinely unsupported.
+            // This preserves old-router dashboard request contracts.
+            var read = await session.ReadAsync("/tool/user-manager/user/print",
+                new Dictionary<string, string> { ["count-only"] = "yes" },
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (read.Done.TryGetValue("ret", out string? value) &&
+                int.TryParse(value, NumberStyles.None,
+                    CultureInfo.InvariantCulture, out int count) && count >= 0)
+                return count;
+            unavailable.Add("User Manager");
+            return null;
+        }
+        catch (RouterOsTrapException ex) when (Unsupported(ex.Message))
+        {
+            return await CountAsync(session, "/user-manager/user/print",
+                "User Manager", unavailable, cancellationToken).ConfigureAwait(false);
+        }
+        catch (RouterOsTrapException)
+        {
+            // Permission denied is not equivalent to "v6 not installed".
+            unavailable.Add("User Manager");
+            return null;
+        }
+    }
+
+    private static bool Unsupported(string message)
+    {
+        string lower = message.ToLowerInvariant();
+        return lower.Contains("no such command", StringComparison.Ordinal) ||
+            lower.Contains("bad command name", StringComparison.Ordinal) ||
+            lower.Contains("unknown command", StringComparison.Ordinal);
     }
 
     private static int? ToPercent(string raw) =>

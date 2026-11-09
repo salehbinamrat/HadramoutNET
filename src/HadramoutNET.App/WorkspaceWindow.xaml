@@ -122,7 +122,7 @@
                                 <Border BorderBrush="{StaticResource SandBorder}" Background="#FFF2E6"
                                         BorderThickness="1" Margin="5" Padding="17">
                                     <StackPanel>
-                                        <TextBlock Text="مستخدمو User Manager v6" FontWeight="Bold"/>
+                                        <TextBlock Text="مستخدمو User Manager 6/7" FontWeight="Bold"/>
                                         <TextBlock x:Name="UserManagerValue" Text="—" FontSize="28"
                                                    Foreground="{StaticResource DarkRed}"/>
                                     </StackPanel>
