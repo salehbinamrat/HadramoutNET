@@ -27,6 +27,7 @@ public partial class WorkspaceWindow : Window
     private readonly TrialStateManager _trial;
     private readonly Stopwatch _uptime;
     private readonly RouterDashboardReader _dashboard = new();
+    private readonly RouterAccountDirectory _directory = new();
     private readonly DispatcherTimer _heartbeat = new();
     private readonly CancellationTokenSource _cancel = new();
     private IReadOnlyList<Voucher> _generated = [];
@@ -40,6 +41,8 @@ public partial class WorkspaceWindow : Window
     private PackageSettingsStore? _packages;
     private bool _checking;
     private bool _refreshing;
+    private bool _readingPpp;
+    private bool _readingUserManager;
 
     private sealed record HotspotRow(
         string Name, string Profile, string Disabled, string LimitUptime, string LimitBytes);
@@ -78,6 +81,16 @@ public partial class WorkspaceWindow : Window
     private void ShowCards_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 1;
     private void ShowHotspot_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 2;
     private void ShowPackages_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 3;
+    private void ShowPpp_Click(object sender, RoutedEventArgs e)
+    {
+        Pages.SelectedIndex = 4;
+        _ = LoadPppAsync();
+    }
+    private void ShowUserManager_Click(object sender, RoutedEventArgs e)
+    {
+        Pages.SelectedIndex = 5;
+        _ = LoadUserManagerAsync();
+    }
     private void ShowUserManager_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 4;
     private void RefreshUserManager_Click(object sender, RoutedEventArgs e) =>
         _ = LoadUserManagerAsync();
@@ -87,6 +100,10 @@ public partial class WorkspaceWindow : Window
         _ = LoadDashboardAsync();
     private void RefreshHotspot_Click(object sender, RoutedEventArgs e) =>
         _ = LoadHotspotAsync();
+    private void RefreshPpp_Click(object sender, RoutedEventArgs e) =>
+        _ = LoadPppAsync();
+    private void RefreshUserManager_Click(object sender, RoutedEventArgs e) =>
+        _ = LoadUserManagerAsync();
 
     private bool _loadingUserManager;
 
@@ -208,6 +225,59 @@ public partial class WorkspaceWindow : Window
             if (IsLoaded)
                 WorkspaceStatus.Text = "خدمة Hotspot غير متاحة، أو لا تملك صلاحية قراءة المستخدمين.";
         }
+    }
+
+    private async Task LoadPppAsync()
+    {
+        if (_readingPpp || !IsLoaded || !ConfirmCurrentAccess()) return;
+        _readingPpp = true;
+        PppNotice.Text = "جارٍ قراءة حسابات PPPoE...";
+        try
+        {
+            RouterDirectoryResult result = await _directory.ReadPppAsync(_session, _cancel.Token);
+            if (!IsLoaded) return;
+            PppGrid.ItemsSource = result.Available ? result.Accounts : null;
+            PppNotice.Text = result.Available
+                ? $"تم تحميل {result.Accounts.Count} حساب PPPoE بدون كلمات مرور."
+                : "تعذر الوصول لحسابات PPPoE أو لا توجد صلاحية قراءة.";
+        }
+        catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
+        catch (InvalidOperationException)
+        {
+            if (IsLoaded) LockWorkspace();
+        }
+        catch (Exception)
+        {
+            if (IsLoaded) PppNotice.Text = "تعذر قراءة حسابات PPPoE؛ لا تغييرات على الراوتر.";
+        }
+        finally { _readingPpp = false; }
+    }
+
+    private async Task LoadUserManagerAsync()
+    {
+        if (_readingUserManager || !IsLoaded || !ConfirmCurrentAccess()) return;
+        _readingUserManager = true;
+        UserManagerNotice.Text = "جارٍ قراءة مستخدمي User Manager...";
+        try
+        {
+            RouterDirectoryResult result = await _directory.ReadUserManagerAsync(
+                _session, _cancel.Token);
+            if (!IsLoaded) return;
+            UserManagerGrid.ItemsSource = result.Available ? result.Accounts : null;
+            UserManagerNotice.Text = result.Available
+                ? $"تم تحميل {result.Accounts.Count} مستخدم من User Manager {result.Version}."
+                : "خدمة User Manager غير متاحة أو لا توجد صلاحية قراءة.";
+        }
+        catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
+        catch (InvalidOperationException)
+        {
+            if (IsLoaded) LockWorkspace();
+        }
+        catch (Exception)
+        {
+            if (IsLoaded) UserManagerNotice.Text = "تعذر قراءة User Manager؛ لا تغييرات على الراوتر.";
+        }
+        finally { _readingUserManager = false; }
     }
 
     private static string Field(IReadOnlyDictionary<string, string> row, string key) =>
