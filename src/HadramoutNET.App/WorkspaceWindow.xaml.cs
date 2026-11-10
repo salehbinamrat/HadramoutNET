@@ -46,6 +46,10 @@ public partial class WorkspaceWindow : Window
     private bool _readingMaintenanceAudit;
     private bool _recheckingSession;
     private readonly DispatcherTimer _heartbeat = new();
+    private readonly DispatcherTimer _cardPreviewDebounce = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(450)
+    };
     private readonly CancellationTokenSource _cancel = new();
     private IReadOnlyList<Voucher> _generated = [];
     private bool _syncingCardCredentialUi;
@@ -111,6 +115,35 @@ public partial class WorkspaceWindow : Window
         SyncCredentialPresentation();
         SyncCharsetPresentation();
         RefreshCardPageCount();
+        _cardPreviewDebounce.Tick += (_, _) =>
+        {
+            _cardPreviewDebounce.Stop();
+            if (IsLoaded && LiveCardPreviewContent.IsVisible)
+                RefreshInlineCardPreview();
+        };
+        // The source Python page redraws automatically after edits. Use a
+        // bounded debounce and one throwaway voucher; no router I/O or writes.
+        foreach (TextBox input in new[]
+        {
+            QtyBox, CardLengthBox, PasswordLengthBox, StartSequenceBox,
+            CardAlphabetBox, PasswordAlphabetBox, CardPrefixBox,
+            CardPriceBox, CardCapacityBox, CardHoursBox,
+            CardMinutesBox, CardValidityBox, UmCustomerBox
+        })
+            input.TextChanged += (_, _) => ScheduleInlineCardPreview();
+        foreach (ComboBox input in new[]
+        {
+            CardServiceCombo, CardFormatCombo, CardCredentialModeCombo,
+            CardServerCombo, SequenceModeCombo, CapacityUnitCombo,
+            UsernameCharsetCombo, PasswordCharsetCombo
+        })
+            input.SelectionChanged += (_, _) => ScheduleInlineCardPreview();
+        CardProfileBox.SelectionChanged += (_, _) => ScheduleInlineCardPreview();
+        LiveCardPreviewContent.IsVisibleChanged += (_, _) =>
+        {
+            if (LiveCardPreviewContent.IsVisible) ScheduleInlineCardPreview();
+            else _cardPreviewDebounce.Stop();
+        };
     }
 
     private async void WorkspaceLoaded(object sender, RoutedEventArgs e)
@@ -821,8 +854,19 @@ public partial class WorkspaceWindow : Window
         return options;
     }
 
-    private void CardLivePreview_Click(object sender, RoutedEventArgs e) =>
+    private void ScheduleInlineCardPreview()
+    {
+        if (!IsLoaded || LiveCardPreviewContent is null || !LiveCardPreviewContent.IsVisible)
+            return;
+        _cardPreviewDebounce.Stop();
+        _cardPreviewDebounce.Start();
+    }
+
+    private void CardLivePreview_Click(object sender, RoutedEventArgs e)
+    {
+        _cardPreviewDebounce.Stop();
         RefreshInlineCardPreview();
+    }
 
     /// <summary>
     /// Reuses the exact Windows card renderer. An unchanged local draft shows
@@ -2432,6 +2476,7 @@ public partial class WorkspaceWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _cardPreviewDebounce.Stop();
         _heartbeat.Stop();
         _cancel.Cancel();
         base.OnClosed(e);
