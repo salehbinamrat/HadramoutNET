@@ -286,6 +286,13 @@ internal static class CardArtworkEditorWindow
             content.Children.Add(row);
         }
 
+        // The source Python card editor supports dragging existing layers.
+        // Changes here modify only the staged X/Y text boxes; the original
+        // settings remain untouched until the operator accepts this dialog.
+        content.Children.Add(CardArtworkDragPreview.Create(positions,
+            Layers.ToDictionary(item => item.Key, item => item.Title,
+                StringComparer.Ordinal)));
+
         var feedback = new TextBlock { Foreground = Brushes.DarkRed,
             TextWrapping = TextWrapping.Wrap, Margin = new Thickness(3, 12, 3, 5) };
         content.Children.Add(feedback);
