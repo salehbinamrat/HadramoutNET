@@ -3,7 +3,6 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using HadramoutNET.Core.Cards;
-using HadramoutNET.Core.Exporting;
 using HadramoutNET.Core.Printing;
 
 namespace HadramoutNET.App;
@@ -48,10 +47,29 @@ internal static class CardPreviewPngExporter
         var encoder = new PngBitmapEncoder();
         encoder.Frames.Add(BitmapFrame.Create(pixels));
 
-        return AtomicExportFile.Write(destination, staged =>
+        // Keep the previous PNG intact until the whole replacement is
+        // encoded and flushed. Core.AtomicExportFile is intentionally
+        // internal to the core assembly; this UI export owns its own staged
+        // same-directory file, with no side effects on the Python original.
+        string fullPath = Path.GetFullPath(destination);
+        string directory = Path.GetDirectoryName(fullPath)!;
+        Directory.CreateDirectory(directory);
+        string staging = Path.Combine(directory, "." + Path.GetFileName(fullPath) +
+            "." + Guid.NewGuid().ToString("N") + ".tmp");
+        try
         {
-            using FileStream output = File.Create(staged);
-            encoder.Save(output);
-        });
+            using (var output = new FileStream(staging, FileMode.CreateNew,
+                FileAccess.Write, FileShare.None))
+            {
+                encoder.Save(output);
+                output.Flush(flushToDisk: true);
+            }
+            File.Move(staging, fullPath, overwrite: true);
+            return fullPath;
+        }
+        finally
+        {
+            if (File.Exists(staging)) File.Delete(staging);
+        }
     }
 }
