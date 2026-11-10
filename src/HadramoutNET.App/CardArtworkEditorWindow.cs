@@ -124,6 +124,18 @@ internal static class CardArtworkEditorWindow
             Text = "إعدادات خطوط وإطار الكرت", FontWeight = FontWeights.Bold,
             Margin = new Thickness(0, 9, 0, 7)
         });
+        content.Children.Add(new TextBlock
+        {
+            Text = "نوع الخط (تُطبق على Windows وPDF)", FontWeight = FontWeights.SemiBold
+        });
+        var fontFamily = new ComboBox { Height = 33, Margin = new Thickness(0, 3, 0, 8) };
+        foreach (string family in new[] { "Arial", "Tahoma" })
+        {
+            var item = new ComboBoxItem { Content = family, Tag = family };
+            fontFamily.Items.Add(item);
+            if (current.FontFamily == family) fontFamily.SelectedItem = item;
+        }
+        content.Children.Add(fontFamily);
         var fontSize = TextField(content, "حجم الخط المرجعي (1-300)",
             current.FontSize.ToString("G", CultureInfo.InvariantCulture));
         var fontBold = Toggle(content, "الخط الأساسي عريض", current.FontBold);
@@ -350,6 +362,8 @@ internal static class CardArtworkEditorWindow
                     QrLoginUrl = qrUrl.Text,
                     QrSizeMm = Read(qrSize, 1, 300),
                     FontSize = Read(fontSize, 1, 300),
+                    FontFamily = (fontFamily.SelectedItem as ComboBoxItem)?.Tag?.ToString()
+                        ?? "Arial",
                     FontBold = Selected(fontBold),
                     FontColor = fontColor.Text,
                     UsernameColor = credentialColor.Text,

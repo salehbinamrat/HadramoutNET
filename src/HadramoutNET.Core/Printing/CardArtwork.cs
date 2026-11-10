@@ -41,7 +41,8 @@ public sealed record CardArtOptions(
     double BorderWidth = 1,
     double BorderRadius = 0,
     IReadOnlyDictionary<string, double>? LayerScales = null,
-    IReadOnlyDictionary<string, string>? LayerColors = null);
+    IReadOnlyDictionary<string, string>? LayerColors = null,
+    string FontFamily = "Arial");
 
 public sealed record CardArtText(
     string Key, string Value, double X, double Y, double Width,

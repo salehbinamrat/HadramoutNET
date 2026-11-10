@@ -38,7 +38,7 @@ public static class VoucherPdfExporter
         foreach (Voucher card in cards)
             _ = CardArtwork.Create(card, options.CardWidthMm,
                 options.CardHeightMm, artwork);
-        PrepareArialFont();
+        PrepareCardFonts();
 
         CardBackgroundPng? bgAsset = CardBackgroundAsset.Decode(artwork.BackgroundData);
         return AtomicExportFile.Write(destination, staged =>
@@ -58,7 +58,7 @@ public static class VoucherPdfExporter
                 var key = (size, bold);
                 if (!fonts.TryGetValue(key, out XFont? font))
                 {
-                    font = new XFont("Arial", size,
+                    font = new XFont(artwork.FontFamily, size,
                         bold ? XFontStyleEx.Bold : XFontStyleEx.Regular);
                     fonts.Add(key, font);
                 }
@@ -202,7 +202,7 @@ public static class VoucherPdfExporter
         finally { g.Restore(state); }
     }
 
-    private static void PrepareArialFont()
+    private static void PrepareCardFonts()
     {
         if (!OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException("يتطلب تصدير هذا القالب خطوط Windows.");
@@ -210,22 +210,28 @@ public static class VoucherPdfExporter
         lock (FontsLock)
         {
             if (GlobalFontSettings.FontResolver is null)
-                GlobalFontSettings.FontResolver = new WindowsArialResolver();
+                GlobalFontSettings.FontResolver = new WindowsCardFontResolver();
         }
     }
 
     /// <summary>
-    /// Read Arial from the user's own Windows installation. No Microsoft
+    /// Read Arial/Tahoma from the user's own Windows installation. No Microsoft
     /// font files are committed to GitHub or redistributed with the app.
     /// </summary>
-    private sealed class WindowsArialResolver : IFontResolver
+    private sealed class WindowsCardFontResolver : IFontResolver
     {
         public FontResolverInfo? ResolveTypeface(
             string familyName, bool isBold, bool isItalic)
         {
-            if (!familyName.Equals("Arial", StringComparison.OrdinalIgnoreCase))
-                return null;
-            return new FontResolverInfo(isBold ? "hnet-arial-bold" : "hnet-arial",
+            string? face = familyName switch
+            {
+                var name when name.Equals("Arial", StringComparison.OrdinalIgnoreCase)
+                    => isBold ? "hnet-arial-bold" : "hnet-arial",
+                var name when name.Equals("Tahoma", StringComparison.OrdinalIgnoreCase)
+                    => isBold ? "hnet-tahoma-bold" : "hnet-tahoma",
+                _ => null
+            };
+            return face is null ? null : new FontResolverInfo(face,
                 mustSimulateBold: false, mustSimulateItalic: isItalic);
         }
 
@@ -235,11 +241,13 @@ public static class VoucherPdfExporter
             {
                 "hnet-arial" => "arial.ttf",
                 "hnet-arial-bold" => "arialbd.ttf",
+                "hnet-tahoma" => "tahoma.ttf",
+                "hnet-tahoma-bold" => "tahomabd.ttf",
                 _ => throw new ArgumentException("Unknown local Windows font.", nameof(faceName))
             };
             string directory = Environment.GetFolderPath(Environment.SpecialFolder.Fonts);
             if (string.IsNullOrWhiteSpace(directory))
-                throw new InvalidOperationException("تعذر تحديد خط Arial الخاص بنظام Windows.");
+                throw new InvalidOperationException("تعذر تحديد خطوط Windows المحلية.");
             return File.ReadAllBytes(Path.Combine(directory, fileName));
         }
     }

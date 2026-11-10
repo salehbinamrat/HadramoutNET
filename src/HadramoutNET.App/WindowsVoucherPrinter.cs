@@ -294,7 +294,7 @@ internal static class WindowsVoucherPrinter
             var label = new TextBlock
             {
                 Text = element.Value,
-                FontFamily = new FontFamily("Arial"),
+                FontFamily = new FontFamily(artwork?.FontFamily ?? "Arial"),
                 FontWeight = element.Bold ? FontWeights.Bold : FontWeights.Normal,
                 FontSize = element.FontPt * DipPerPoint,
                 Foreground = ColorBrush(element.Color),
