@@ -46,7 +46,9 @@ public sealed class RouterVoucherPublisher
             string.IsNullOrWhiteSpace(options.Profile) ||
             options.Profile.Length > 80 ||
             options.Profile.Any(char.IsControl) ||
-            options.Server.Length > 128)
+            options.Server is null || options.Server.Length > 128 ||
+            options.Server.Any(char.IsControl) ||
+            (options.Service != "hotspot" && options.Server != "all"))
             return Fail("invalid_options",
                 "نوع الخدمة أو اسم الباقة أو السيرفر غير صالح.", attempted);
         if (attempted is < 1 or > VoucherGenerator.MaxBatchSize)
@@ -92,6 +94,18 @@ public sealed class RouterVoucherPublisher
                 return Fail("profile_missing",
                     "لم يتم العثور على الباقة المطلوبة في الراوتر؛ لم يبدأ الرفع.",
                     attempted);
+
+            // A selected Hotspot server must exist in a complete current
+            // router inventory; a stale dropdown must never create users.
+            if (options.Service == "hotspot" &&
+                !string.IsNullOrEmpty(options.Server) && options.Server != "all")
+            {
+                IReadOnlySet<string> servers = await ReadCompleteNamesAsync(
+                    session, "/ip/hotspot/print", cancellationToken).ConfigureAwait(false);
+                if (!servers.Contains(options.Server))
+                    return Fail("server_missing",
+                        "سيرفر Hotspot المحدد غير موجود؛ لم يبدأ رفع الكروت.", attempted);
+            }
         }
         catch (RouterOsTrapException)
         {

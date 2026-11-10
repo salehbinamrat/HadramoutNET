@@ -16,7 +16,10 @@ public sealed record RouterDashboardSnapshot(
     int? HotspotActive,
     int? PppActive,
     int? UserManagerUsers,
-    IReadOnlyList<string> UnavailableServices);
+    IReadOnlyList<string> UnavailableServices)
+{
+    public string RouterBoardName { get; init; } = "";
+}
 
 public sealed class RouterDashboardReader
 {
@@ -61,7 +64,14 @@ public sealed class RouterDashboardReader
                 version : "",
             resource is not null && resource.TryGetValue("uptime", out string? uptime) ?
                 uptime : "",
-            cpu, memory, hotspot, active, ppp, um, errors);
+            cpu, memory, hotspot, active, ppp, um, errors)
+        {
+            RouterBoardName = resource is not null &&
+                resource.TryGetValue("board-name", out string? board) &&
+                !string.IsNullOrWhiteSpace(board) ? board :
+                resource is not null && resource.TryGetValue("platform", out string? platform)
+                    ? platform : ""
+        };
     }
 
     private static async Task<IReadOnlyDictionary<string, string>?> ResourceAsync(

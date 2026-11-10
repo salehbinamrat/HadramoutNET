@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using HadramoutNET.Core.Printing;
+using HadramoutNET.Core.Visual;
 
 namespace HadramoutNET.App;
 
@@ -38,16 +39,26 @@ internal static class PrintLayoutEditorWindow
         for (int i = 0; i < 11; i++)
             form.RowDefinitions.Add(new RowDefinition { Height = new GridLength(42) });
 
-        static TextBox Numeric(double value) => new()
+        static TextBox Numeric(double value)
         {
-            Text = value.ToString("G17", CultureInfo.InvariantCulture),
-            Height = 32, MinWidth = 160, MaxLength = 30
-        };
-        static TextBox Integer(int value) => new()
+            var input = new TextBox
+            {
+                Text = value.ToString("G17", CultureInfo.InvariantCulture),
+                Height = 32, MinWidth = 160, MaxLength = 30
+            };
+            TechnicalTextInput.Attach(input);
+            return input;
+        }
+        static TextBox Integer(int value)
         {
-            Text = value.ToString(CultureInfo.InvariantCulture),
-            Height = 32, MinWidth = 160, MaxLength = 8
-        };
+            var input = new TextBox
+            {
+                Text = value.ToString(CultureInfo.InvariantCulture),
+                Height = 32, MinWidth = 160, MaxLength = 8
+            };
+            TechnicalTextInput.Attach(input);
+            return input;
+        }
 
         static ComboBox Choice(string value, params (string Label, string Key)[] options)
         {
@@ -131,22 +142,60 @@ internal static class PrintLayoutEditorWindow
 
         static double ParseNumber(TextBox field)
         {
-            if (!double.TryParse(field.Text.Trim(), NumberStyles.Float,
-                    CultureInfo.InvariantCulture, out double value) ||
+            if (!TechnicalNumberParser.TryFiniteDouble(field.Text, out double value) ||
                 !double.IsFinite(value))
                 throw new PrintLayoutException("أدخل قيمة رقمية صحيحة ومحدودة.");
             return value;
         }
         static int ParseCount(TextBox field)
         {
-            if (!int.TryParse(field.Text.Trim(), NumberStyles.None,
-                    CultureInfo.InvariantCulture, out int value))
+            if (!TechnicalNumberParser.TryUnsignedInt(field.Text, out int value))
                 throw new PrintLayoutException("أدخل عددا صحيحا للصفوف والأعمدة.");
             return value;
         }
         static string Selected(ComboBox combo) =>
             (combo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ??
                 throw new PrintLayoutException("اختر قيمة مدعومة من القائمة.");
+
+        var autoGrid = new Button
+        {
+            Content = "احتساب التوزيع التلقائي", Width = 210, Height = 38,
+            Margin = new Thickness(4)
+        };
+        autoGrid.Click += (_, _) =>
+        {
+            try
+            {
+                // Compute against the actual selected paper, card dimensions,
+                // margins and gaps, without altering saved settings first.
+                var draft = current with
+                {
+                    CardWidthMm = ParseNumber(width),
+                    CardHeightMm = ParseNumber(height),
+                    Rows = 1, Columns = 1,
+                    Paper = Selected(paper),
+                    Orientation = Selected(orientation),
+                    HorizontalGapMm = ParseNumber(gapH),
+                    VerticalGapMm = ParseNumber(gapV),
+                    MarginMm = ParseNumber(margin)
+                };
+                (int countRows, int countColumns) = PrintLayouts.AutoGrid(draft);
+                _ = PrintLayouts.Calculate(draft with
+                {
+                    Rows = countRows, Columns = countColumns
+                });
+                rows.Text = countRows.ToString(CultureInfo.InvariantCulture);
+                columns.Text = countColumns.ToString(CultureInfo.InvariantCulture);
+                feedback.Text = "التوزيع التلقائي: " +
+                    countRows.ToString(CultureInfo.InvariantCulture) + " صف × " +
+                    countColumns.ToString(CultureInfo.InvariantCulture) +
+                    " عمود. اضغط اعتماد التخطيط لتطبيقه.";
+            }
+            catch (PrintLayoutException error)
+            {
+                feedback.Text = error.Message;
+            }
+        };
 
         accept.Click += (_, _) =>
         {
@@ -182,6 +231,7 @@ internal static class PrintLayoutEditorWindow
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
         };
+        buttons.Children.Add(autoGrid);
         buttons.Children.Add(accept);
         buttons.Children.Add(cancel);
         var content = new StackPanel();
@@ -194,6 +244,7 @@ internal static class PrintLayoutEditorWindow
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             Content = content
         };
+        dialog.SourceInitialized += (_, _) => WindowWorkArea.Fit(dialog);
         return dialog.ShowDialog() == true ? chosen : null;
     }
 }

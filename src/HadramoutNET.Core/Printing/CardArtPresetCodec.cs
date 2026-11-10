@@ -47,6 +47,7 @@ public static class CardArtPresetCodec
             ["card.background_mode"] = JsonSerializer.SerializeToElement(value.BackgroundMode),
             ["card.background_data"] = JsonSerializer.SerializeToElement(value.BackgroundData ?? ""),
             ["card.font_size"] = JsonSerializer.SerializeToElement(value.FontSize),
+            ["card.font_family"] = JsonSerializer.SerializeToElement(value.FontFamily),
             ["card.font_bold"] = JsonSerializer.SerializeToElement(value.FontBold),
             ["card.font_color"] = JsonSerializer.SerializeToElement(value.FontColor),
             ["card.color.username"] = JsonSerializer.SerializeToElement(value.UsernameColor),
@@ -102,6 +103,7 @@ public static class CardArtPresetCodec
             BackgroundMode = ReadText(values, "card.background_mode", defaultOptions.BackgroundMode),
             BackgroundData = ReadBackground(values),
             FontSize = ReadNumber(values, "card.font_size", defaultOptions.FontSize),
+            FontFamily = ReadText(values, "card.font_family", defaultOptions.FontFamily),
             FontBold = ReadBool(values, "card.font_bold", defaultOptions.FontBold),
             FontColor = ReadText(values, "card.font_color", defaultOptions.FontColor),
             UsernameColor = ReadText(values, "card.color.username", defaultOptions.UsernameColor),
@@ -188,6 +190,8 @@ public static class CardArtPresetCodec
     {
         ArgumentNullException.ThrowIfNull(options);
         ValidateLayerStyles(options);
+        if (options.FontFamily is not ("Arial" or "Tahoma"))
+            throw new PrintLayoutException("يُدعم خط Arial أو Tahoma فقط في طباعتي PDF وWindows.");
         if (!double.IsFinite(options.FontSize) ||
             options.FontSize is < 1 or > 300 ||
             !double.IsFinite(options.BorderWidth) ||

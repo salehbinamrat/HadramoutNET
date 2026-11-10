@@ -39,7 +39,11 @@ public sealed class CardTemplateExchangeTests
         var imported = CardTemplateExchange.Import(Encoding.UTF8.GetBytes(json));
         Assert.True(imported.Artwork.ShowTitle);
         Assert.Equal("شبكة حضرموت", imported.Artwork.Title);
-        Assert.Equal(2, imported.UnrecognizedCardSettings.Count);
+        // card.font_family is now a supported original property.
+        // card.dpi remains unsupported and must be preserved, not rendered.
+        Assert.Single(imported.UnrecognizedCardSettings);
+        Assert.Equal("Arial", imported.Artwork.FontFamily);
+        Assert.True(imported.UnrecognizedCardSettings.ContainsKey("card.dpi"));
         Assert.Equal(1.4, imported.Artwork.LayerScales!["username"]);
         Assert.DoesNotContain("create.profile", imported.UnrecognizedCardSettings.Keys);
         byte[] reexport = CardTemplateExchange.Export(
@@ -48,8 +52,8 @@ public sealed class CardTemplateExchangeTests
         Assert.Equal(imported.UnrecognizedCardSettings.Count,
             again.UnrecognizedCardSettings.Count);
         Assert.Equal(1.4, again.Artwork.LayerScales!["username"]);
-        Assert.Equal("Arial", again.UnrecognizedCardSettings[
-            "card.font_family"].GetString());
+        Assert.Equal("Arial", again.Artwork.FontFamily);
+        Assert.Equal(300, again.UnrecognizedCardSettings["card.dpi"].GetInt32());
     }
 
     [Theory]

@@ -32,6 +32,7 @@ public partial class WorkspaceWindow : Window
     private readonly RouterDashboardReader _dashboard = new();
     private DateTimeOffset _dashboardLastReadUtc = DateTimeOffset.MinValue;
     private bool _refreshingLifecycle;
+    private bool _initialLifecycleRequested;
     private readonly UserManagerLifecycleReader _voucherLifecycle = new();
     private bool _readingVoucherStatus;
     private string _currentSidebarKey = "dashboard";
@@ -45,9 +46,24 @@ public partial class WorkspaceWindow : Window
     private bool _readingMaintenanceAudit;
     private bool _recheckingSession;
     private readonly DispatcherTimer _heartbeat = new();
+    private readonly DispatcherTimer _cardPreviewDebounce = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(450)
+    };
     private readonly CancellationTokenSource _cancel = new();
     private IReadOnlyList<Voucher> _generated = [];
+    private bool _syncingCardCredentialUi;
+    private bool _syncingCardCharsetUi;
+    private string _lastCardPasswordRelation = "code_password";
     private VoucherDraftTarget? _draftTarget;
+    private VoucherDraftSettings? _draftSettings;
+    private readonly RouterCardTargetCatalog _cardTargets = new();
+    private bool _readingCardTargets;
+    private bool _reloadingCardsPackages;
+    private string _draftServer = "all";
+    private bool _uploadAttempted;
+    private IReadOnlySet<string> _acknowledgedUsernames =
+        new HashSet<string>(StringComparer.Ordinal);
     private PrintLayoutOptions _printLayout = new();
     private CardArtOptions _cardArt = new();
     private IReadOnlyDictionary<string, JsonElement> _cardExtraSettings =
@@ -90,11 +106,44 @@ public partial class WorkspaceWindow : Window
         _trial = trial ?? throw new ArgumentNullException(nameof(trial));
         _uptime = uptime ?? throw new ArgumentNullException(nameof(uptime));
         InitializeComponent();
+        SourceInitialized += (_, _) => WindowWorkArea.Fit(this);
         BuildSidebarNavigation();
         RefreshSidebarConnection();
         RouterCaption.Text = $"{session.Identity} — {session.Endpoint}";
         _heartbeat.Interval = TimeSpan.FromSeconds(20);
         _heartbeat.Tick += Heartbeat_Tick;
+        SyncCredentialPresentation();
+        SyncCharsetPresentation();
+        RefreshCardPageCount();
+        _cardPreviewDebounce.Tick += (_, _) =>
+        {
+            _cardPreviewDebounce.Stop();
+            if (IsLoaded && LiveCardPreviewContent.IsVisible)
+                RefreshInlineCardPreview();
+        };
+        // The source Python page redraws automatically after edits. Use a
+        // bounded debounce and one throwaway voucher; no router I/O or writes.
+        foreach (TextBox input in new[]
+        {
+            QtyBox, CardLengthBox, PasswordLengthBox, StartSequenceBox,
+            CardAlphabetBox, PasswordAlphabetBox, CardPrefixBox,
+            CardPriceBox, CardCapacityBox, CardHoursBox,
+            CardMinutesBox, CardValidityBox, UmCustomerBox
+        })
+            input.TextChanged += (_, _) => ScheduleInlineCardPreview();
+        foreach (ComboBox input in new[]
+        {
+            CardServiceCombo, CardFormatCombo, CardCredentialModeCombo,
+            CardServerCombo, SequenceModeCombo, CapacityUnitCombo,
+            UsernameCharsetCombo, PasswordCharsetCombo
+        })
+            input.SelectionChanged += (_, _) => ScheduleInlineCardPreview();
+        CardProfileBox.SelectionChanged += (_, _) => ScheduleInlineCardPreview();
+        LiveCardPreviewContent.IsVisibleChanged += (_, _) =>
+        {
+            if (LiveCardPreviewContent.IsVisible) ScheduleInlineCardPreview();
+            else _cardPreviewDebounce.Stop();
+        };
     }
 
     private async void WorkspaceLoaded(object sender, RoutedEventArgs e)
@@ -141,7 +190,14 @@ public partial class WorkspaceWindow : Window
 
         _heartbeat.Start();
         RefreshSidebarConnection();
+        RefreshDashboardLicenseBanner();
         await LoadDashboardAsync();
+        // One non-blocking lifecycle read after login; further scans are manual.
+        if (!_initialLifecycleRequested && IsLoaded && _session.HasCurrentAccess)
+        {
+            _initialLifecycleRequested = true;
+            _ = RefreshDashboardLifecycleAsync();
+        }
     }
 
 
@@ -345,11 +401,22 @@ public partial class WorkspaceWindow : Window
             _ => "dashboard"
         };
         MarkSidebarSelection(key);
+        if (Pages.SelectedIndex == 0) UpdateDashboardRecentActivity();
+        if (Pages.SelectedIndex == 1)
+        {
+            UpdateCreationFormOptions();
+            _ = LoadCreationTargetsAsync();
+        }
     }
 
     private void ShowDashboard_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 0;
     private void ShowCards_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 1;
-    private void ShowHotspot_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 2;
+    private void ShowHotspot_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmCurrentAccess()) return;
+        Pages.SelectedIndex = 2;
+        _ = LoadHotspotAsync();
+    }
     private void ShowPackages_Click(object sender, RoutedEventArgs e) => Pages.SelectedIndex = 3;
     private void ShowPpp_Click(object sender, RoutedEventArgs e)
     {
@@ -461,6 +528,7 @@ public partial class WorkspaceWindow : Window
         if (!force && DateTimeOffset.UtcNow - _dashboardLastReadUtc <
                 TimeSpan.FromSeconds(20)) return;
         _refreshing = true;
+        DashboardRefreshButton.IsEnabled = false;
         DashboardNotice.Text = "جارٍ تحديث البيانات من الراوتر...";
         try
         {
@@ -473,14 +541,15 @@ public partial class WorkspaceWindow : Window
             DashboardConnectedMetric connected =
                 DashboardConnectedMetric.FromSources(data.HotspotActive, data.PppActive);
             DashboardConnectedValue.Text = connected.Display;
-            DashboardRouterName.Text = "اسم الراوتر: " + data.RouterName;
-            DashboardRouterHost.Text = "عنوان الراوتر: " + _session.Endpoint;
-            RouterVersionText.Text = "RouterOS: " + data.RouterOsVersion;
-            RouterUptimeText.Text = "وقت التشغيل: " + data.Uptime;
-            DashboardDateText.Text = DateTime.Now.ToString(
-                "yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
-            DashboardLicenseText.Text = _session.HasCurrentAccess ?
-                "حالة الوصول: جلسة مصرح بها" : "حالة الوصول: يلزم إعادة التحقق";
+            DashboardRouterName.Text = "اسم الراوتر: " + EnglishDigitPresentation.Text(data.RouterName);
+            DashboardRouterBoard.Text = "نوع الجهاز: " +
+                EnglishDigitPresentation.Text(string.IsNullOrWhiteSpace(data.RouterBoardName)
+                    ? "—" : data.RouterBoardName);
+            DashboardRouterHost.Text = "عنوان الراوتر: " + EnglishDigitPresentation.Text(_session.Endpoint);
+            RouterVersionText.Text = "RouterOS: " + EnglishDigitPresentation.Text(data.RouterOsVersion);
+            RouterUptimeText.Text = "وقت التشغيل: " + EnglishDigitPresentation.Text(data.Uptime);
+            DashboardDateText.Text = EnglishDigitPresentation.Timestamp(DateTime.Now);
+            RefreshDashboardLicenseBanner();
             DashboardHealthText.Text = data.UnavailableServices.Count == 0 &&
                 !connected.Partial ? "حالة القراءة: جميع المصادر متاحة" :
                 "حالة القراءة: بعض المصادر غير متاحة";
@@ -489,6 +558,7 @@ public partial class WorkspaceWindow : Window
                 "خدمات غير متاحة: " + string.Join("، ", data.UnavailableServices) +
                 " (لم تُعرض قيمة صفر وهمية).";
             _dashboardLastReadUtc = DateTimeOffset.UtcNow;
+            UpdateDashboardRecentActivity();
         }
         catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
         catch (InvalidOperationException)
@@ -497,10 +567,23 @@ public partial class WorkspaceWindow : Window
         }
         catch (Exception)
         {
-            if (IsLoaded)
-                DashboardNotice.Text = "تعذر قراءة البيانات؛ لم يتم تغيير أي إعدادات في MikroTik.";
+            if (IsLoaded && !_session.HasCurrentAccess)
+                LockWorkspace();
+            else if (IsLoaded)
+            {
+                DashboardHealthText.Text = _dashboardLastReadUtc == DateTimeOffset.MinValue
+                    ? "تعذرت القراءة المباشرة؛ لا توجد بيانات مؤكدة"
+                    : "تحذير: فشل التحديث؛ المعروض آخر قراءة ناجحة";
+                DashboardNotice.Text = _dashboardLastReadUtc == DateTimeOffset.MinValue
+                    ? "تعذر جلب البيانات من MikroTik. القيم غير المعروفة ليست صفرا."
+                    : "تعذر التحديث؛ لم تتغير البيانات، والتاريخ يخص آخر قراءة ناجحة.";
+            }
         }
-        finally { _refreshing = false; }
+        finally
+        {
+            _refreshing = false;
+            if (IsLoaded) DashboardRefreshButton.IsEnabled = true;
+        }
     }
 
     private async Task LoadHotspotAsync()
@@ -613,6 +696,23 @@ public partial class WorkspaceWindow : Window
         finally { _refreshingLifecycle = false; }
     }
 
+    private void RefreshDashboardLicenseBanner()
+    {
+        if (DashboardLicenseText is null) return;
+        try
+        {
+            DashboardAccessState display = DashboardAccessPresentation.From(
+                _paid.StatusAt(_uptime.Elapsed), _trial.Preview(DateTimeOffset.UtcNow),
+                _session.HasCurrentAccess);
+            DashboardLicenseText.Text = display.Text;
+        }
+        catch (Exception)
+        {
+            DashboardLicenseText.Text =
+                "حالة الوصول: تعذر قراءة الترخيص أو التجربة المحمية.";
+        }
+    }
+
     private void UpdateDashboardRecentActivity()
     {
         if (DashboardRecentActivity is null) return;
@@ -670,7 +770,11 @@ public partial class WorkspaceWindow : Window
         finally
         {
             _checking = false;
-            if (IsLoaded) RefreshSidebarConnection();
+            if (IsLoaded)
+            {
+                RefreshSidebarConnection();
+                RefreshDashboardLicenseBanner();
+            }
         }
     }
 
@@ -681,18 +785,41 @@ public partial class WorkspaceWindow : Window
         Close();
     }
 
+    private void TechnicalNumericInput_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        TechnicalTextInput.NormalizeTextBox(sender, e);
+        if (ReferenceEquals(sender, QtyBox)) RefreshCardPageCount();
+    }
+
+    private void RefreshCardPageCount()
+    {
+        if (CardPageCountText is null || QtyBox is null) return;
+        if (!TechnicalNumberParser.TryUnsignedInt(QtyBox.Text, out int quantity) || quantity <= 0)
+        {
+            CardPageCountText.Text = "أدخل كمية كروت صحيحة لحساب أوراق الطباعة.";
+            return;
+        }
+        try
+        {
+            PrintSheetPlan plan = PrintLayouts.Plan(_printLayout, quantity);
+            CardPageCountText.Text = "الأوراق: " + plan.Sheets.ToString(CultureInfo.InvariantCulture) +
+                " | صفحات PDF: " + plan.PdfPages.ToString(CultureInfo.InvariantCulture) +
+                " | " + plan.PerSheet.ToString(CultureInfo.InvariantCulture) + " كرت/ورقة";
+        }
+        catch (PrintLayoutException)
+        {
+            CardPageCountText.Text = "تخطيط الورق الحالي غير صالح؛ افتح إعدادات الطباعة.";
+        }
+    }
+
     private CardGenerationOptions CurrentGenerationOptions()
     {
-        if (!int.TryParse(QtyBox.Text, NumberStyles.None,
-                CultureInfo.InvariantCulture, out int quantity) ||
-            !int.TryParse(CardLengthBox.Text, NumberStyles.None,
-                CultureInfo.InvariantCulture, out int codeLength) ||
-            !int.TryParse(PasswordLengthBox.Text, NumberStyles.None,
-                CultureInfo.InvariantCulture, out int passwordLength) ||
-            !int.TryParse(StartSequenceBox.Text, NumberStyles.None,
-                CultureInfo.InvariantCulture, out int startSequence))
+        if (!TechnicalNumberParser.TryUnsignedInt(QtyBox.Text, out int quantity) ||
+            !TechnicalNumberParser.TryUnsignedInt(CardLengthBox.Text, out int codeLength) ||
+            !TechnicalNumberParser.TryUnsignedInt(PasswordLengthBox.Text, out int passwordLength) ||
+            !TechnicalNumberParser.TryUnsignedInt(StartSequenceBox.Text, out int startSequence))
             throw new CardGenerationException(
-                "أدخل أعدادا إنجليزية صحيحة للكمية والأطوال وبداية الترقيم.");
+                "أدخل أعدادا صحيحة للكمية والأطوال وبداية الترقيم.");
 
         var options = new CardGenerationOptions(
             Quantity: quantity,
@@ -711,20 +838,13 @@ public partial class WorkspaceWindow : Window
 
     private VoucherCardMetadataOptions CurrentCardMetadataOptions()
     {
-        if (!decimal.TryParse(CardPriceBox.Text.Trim(),
-                NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture,
-                out decimal price) ||
-            !decimal.TryParse(CardCapacityBox.Text.Trim(),
-                NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture,
-                out decimal capacity) ||
-            !int.TryParse(CardHoursBox.Text.Trim(),
-                NumberStyles.None, CultureInfo.InvariantCulture, out int hours) ||
-            !int.TryParse(CardMinutesBox.Text.Trim(),
-                NumberStyles.None, CultureInfo.InvariantCulture, out int minutes) ||
-            !int.TryParse(CardValidityBox.Text.Trim(),
-                NumberStyles.None, CultureInfo.InvariantCulture, out int validity))
+        if (!TechnicalNumberParser.TryDecimal(CardPriceBox.Text, out decimal price) ||
+            !TechnicalNumberParser.TryDecimal(CardCapacityBox.Text, out decimal capacity) ||
+            !TechnicalNumberParser.TryUnsignedInt(CardHoursBox.Text, out int hours) ||
+            !TechnicalNumberParser.TryUnsignedInt(CardMinutesBox.Text, out int minutes) ||
+            !TechnicalNumberParser.TryUnsignedInt(CardValidityBox.Text, out int validity))
             throw new CardGenerationException(
-                "السعر والسعة والمدة والصلاحية يجب أن تكون قيما إنجليزية صحيحة.");
+                "السعر والسعة والمدة والصلاحية يجب أن تكون قيما رقمية صحيحة.");
 
         var options = new VoucherCardMetadataOptions(
             Price: price, Capacity: capacity,
@@ -732,6 +852,80 @@ public partial class WorkspaceWindow : Window
             Hours: hours, Minutes: minutes, ValidityDays: validity);
         VoucherCardMetadata.Validate(options);
         return options;
+    }
+
+    private void ScheduleInlineCardPreview()
+    {
+        if (!IsLoaded || LiveCardPreviewContent is null || !LiveCardPreviewContent.IsVisible)
+            return;
+        _cardPreviewDebounce.Stop();
+        _cardPreviewDebounce.Start();
+    }
+
+    private void CardLivePreview_Click(object sender, RoutedEventArgs e)
+    {
+        _cardPreviewDebounce.Stop();
+        RefreshInlineCardPreview();
+    }
+
+    /// <summary>
+    /// Reuses the exact Windows card renderer. An unchanged local draft shows
+    /// its first real voucher; otherwise render one throwaway offline sample.
+    /// Never contacts RouterOS, writes files or publishes credentials.
+    /// </summary>
+    private void RefreshInlineCardPreview()
+    {
+        if (LiveCardPreviewContent is null || LiveCardPreviewStatus is null) return;
+        try
+        {
+            CardGenerationOptions options = CurrentGenerationOptions();
+            VoucherCardMetadataOptions metadata = CurrentCardMetadataOptions();
+            bool currentDraft = _generated.Count > 0 && _draftTarget is not null &&
+                _draftTarget.Matches(Choice(CardServiceCombo),
+                    CardProfileBox.Text, UmCustomerBox.Text) &&
+                _draftServer == SelectedCardServer() && DraftOptionsStillCurrent();
+            Voucher card = VoucherInlinePreview.Choose(
+                options, metadata, _generated, currentDraft, DateTimeOffset.Now);
+            FrameworkElement render = WindowsVoucherPrinter.BuildInlineCard(
+                card, _printLayout, _cardArt);
+            LiveCardPreviewContent.Content = new Viewbox
+            {
+                Width = 505,
+                Height = 174,
+                Stretch = Stretch.Uniform,
+                Child = render
+            };
+            LiveCardPreviewStatus.Text = currentDraft
+                ? "المعروض هو الكرت الأول من الدفعة الحالية بتصميم الطباعة نفسه."
+                : "عينة محلية للتصميم فقط؛ لم تُحفظ أو تُرسل للراوتر، وقد تختلف الأرقام الفعلية.";
+        }
+        catch (Exception ex) when (ex is CardGenerationException or
+            PrintLayoutException or InvalidOperationException or IOException or ArgumentException)
+        {
+            LiveCardPreviewContent.Content = null;
+            LiveCardPreviewStatus.Text = "تعذرت معاينة التصميم: " + ex.Message;
+        }
+    }
+
+    private void PreviewBeforeCreate_Click(object sender, RoutedEventArgs e)
+    {
+        if (_uploading || _verifyingUmDraft || !ConfirmCurrentAccess()) return;
+        try
+        {
+            CardGenerationOptions options = CurrentGenerationOptions();
+            VoucherCardMetadataOptions metadata = CurrentCardMetadataOptions();
+            _ = VoucherDraftTarget.Create(
+                Choice(CardServiceCombo), CardProfileBox.Text, UmCustomerBox.Text);
+            var sample = VoucherPreviewSample.Create(options, metadata, DateTimeOffset.Now);
+            WindowsVoucherPrinter.Preview(this, sample, _printLayout, _cardArt);
+            CardsNotice.Text = "معاينة تجريبية فقط: لم تُحفظ الأرقام ولم تُرسل إلى الراوتر؛ "
+                + "أسماء الكروت عند الإنشاء الفعلي ستختلف عن العينة.";
+        }
+        catch (Exception ex) when (ex is CardGenerationException or PrintLayoutException or
+            InvalidOperationException)
+        {
+            CardsNotice.Text = "تعذرت المعاينة قبل الإنشاء: " + ex.Message;
+        }
     }
 
     private void GenerateCards_Click(object sender, RoutedEventArgs e)
@@ -748,6 +942,9 @@ public partial class WorkspaceWindow : Window
             VoucherCardMetadataOptions metadata = CurrentCardMetadataOptions();
             VoucherDraftTarget target = VoucherDraftTarget.Create(
                 Choice(CardServiceCombo), CardProfileBox.Text, UmCustomerBox.Text);
+            string server = SelectedCardServer();
+            if (server.Length == 0)
+                throw new CardGenerationException("سيرفر Hotspot المحدد لم يعد موجودا؛ اختر سيرفرا صريحا أو all قبل التوليد.");
 
             // This is a LOCAL draft. A remote uniqueness and profile check is
             // mandatory before actually importing it to the router.
@@ -756,9 +953,14 @@ public partial class WorkspaceWindow : Window
                 metadata, DateTimeOffset.Now);
             _generated = nextDraft;
             _draftTarget = target;
+            _draftSettings = VoucherDraftSettings.Capture(options, metadata);
+            _draftServer = server;
             _published = false;
+            _uploadAttempted = false;
+            _acknowledgedUsernames = new HashSet<string>(StringComparer.Ordinal);
             _deliveryUncertain = false;
             CardGrid.ItemsSource = _generated;
+            RefreshInlineCardPreview();
             CardsNotice.Text = $"تم إنشاء {_generated.Count} مسودة؛ لم ترفع إلى MikroTik.";
             WorkspaceStatus.Text = "راجع الأرقام وكلمات المرور قبل تصدير أي ملف.";
         }
@@ -787,10 +989,11 @@ public partial class WorkspaceWindow : Window
         string service = Choice(CardServiceCombo);
         string profile = CardProfileBox.Text.Trim();
         string customer = UmCustomerBox.Text.Trim();
-        if (_draftTarget is null || !_draftTarget.Matches(service, profile, customer))
+        if (_draftTarget is null || !_draftTarget.Matches(service, profile, customer) ||
+            _draftServer != SelectedCardServer() || !DraftOptionsStillCurrent())
         {
-            CardsNotice.Text = "تغيرت الخدمة أو الباقة أو مالك User Manager بعد إنشاء المسودة. " +
-                "أنشئ مسودة جديدة للتأكد من هوية الجهة قبل الرفع.";
+            CardsNotice.Text = "تغيرت إعدادات إنشاء الكروت أو بيانات السعر والسعة أو الخدمة والباقة والسيرفر بعد التوليد. " +
+                "أنشئ مسودة جديدة قبل الرفع، حتى لا تُرسل كروت بإعدادات قديمة.";
             return;
         }
         string quotaNotice = service == "hotspot"
@@ -808,15 +1011,17 @@ public partial class WorkspaceWindow : Window
         if (confirmed != MessageBoxResult.Yes) return;
 
         _uploading = true;
+        _uploadAttempted = true;
         UploadCardsButton.IsEnabled = false;
         CardsNotice.Text = "جارٍ فحص المستخدمين والباقة ثم الرفع بدون تكرار تلقائي...";
         try
         {
             VoucherPublishReport result = await _deliveryCoordinator.PublishAsync(
                 _session, _generated, service, profile, customer,
-                confirmed: true, _cancel.Token);
+                confirmed: true, _cancel.Token, server: _draftServer);
             if (!IsLoaded) return;
             if (result.Success) _published = true;
+            _acknowledgedUsernames = result.AddedUsernames.ToHashSet(StringComparer.Ordinal);
             if (service == "userman" && (result.Success || result.Uncertain || result.Added > 0))
             {
                 _voucherLifecycle.Invalidate();
@@ -827,7 +1032,9 @@ public partial class WorkspaceWindow : Window
             UpdateDashboardRecentActivity();
             if (result.Uncertain || result.Added > 0) _deliveryUncertain = true;
             CardsNotice.Text = result.Message +
-                $" — تمت إضافة {result.Added} من {result.Attempted}.";
+                $" — تمت إضافة {result.Added} من {result.Attempted}." +
+                (!result.Success && result.Added > 0
+                    ? " ستُطبع وتُصدّر الكروت المؤكدة فقط." : "");
             if (!result.Success && (result.Added > 0 || result.Uncertain))
                 MessageBox.Show(this,
                     "الرفع غير مكتمل أو لا يمكن الجزم بنتيجة إنشاء أحد المستخدمين.\n" +
@@ -856,7 +1063,7 @@ public partial class WorkspaceWindow : Window
     {
         if (_verifyingUmDraft || _uploading || !ConfirmCurrentAccess()) return;
         if (Choice(CardServiceCombo) != "userman" || _generated.Count == 0 ||
-            _draftTarget is null ||
+            _draftTarget is null || !DraftOptionsStillCurrent() ||
             !_draftTarget.Matches(Choice(CardServiceCombo), CardProfileBox.Text,
                 UmCustomerBox.Text))
         {
@@ -877,7 +1084,7 @@ public partial class WorkspaceWindow : Window
                     profile, _cancel.Token);
             if (!IsLoaded) return;
             if (!ReferenceEquals(draft, _generated) ||
-                Choice(CardServiceCombo) != "userman" ||
+                Choice(CardServiceCombo) != "userman" || !DraftOptionsStillCurrent() ||
                 !string.Equals(profile, CardProfileBox.Text.Trim(), StringComparison.Ordinal))
             {
                 CardsNotice.Text = "تغيرت خيارات المسودة أثناء الفحص؛ النتائج ملغاة.";
@@ -1095,32 +1302,45 @@ public partial class WorkspaceWindow : Window
     private static string Choice(ComboBox combo) =>
         (combo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "";
 
-    private IReadOnlyList<IReadOnlyDictionary<string, string?>> CardRows()
+    private string SelectedCardServer() =>
+        Choice(CardServiceCombo) == "hotspot" ?
+            Choice(CardServerCombo) : "all";
+
+    private bool DraftOptionsStillCurrent()
+    {
+        if (_draftSettings is null) return false;
+        try
+        {
+            return _draftSettings.Matches(
+                CurrentGenerationOptions(), CurrentCardMetadataOptions());
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private IReadOnlyList<Voucher> CardsForOutput()
     {
         if (_generated.Count == 0)
-            throw new InvalidOperationException("أنشئ مسودة كروت قبل التصدير.");
-        string service = Choice(CardServiceCombo);
-        string profile = CardProfileBox.Text.Trim();
-        string customer = UmCustomerBox.Text.Trim();
-        if (service == "userman" && customer.Length == 0 && _userManagerVersion == 6)
-            customer = _userManagerProfiles.FirstOrDefault(
-                row => string.Equals(row.Name, profile, StringComparison.Ordinal))?.Owner ?? "";
-        return _generated.Select(voucher => (IReadOnlyDictionary<string, string?>)
-            new Dictionary<string, string?>
-            {
-                ["sequence"] = voucher.Sequence,
-                ["username"] = voucher.Username,
-                ["password"] = voucher.Password,
-                ["profile"] = profile,
-                ["service"] = service,
-                ["um_version"] = service == "userman" && _userManagerVersion != 0 ?
-                    _userManagerVersion.ToString(CultureInfo.InvariantCulture) : "",
-                ["customer"] = service == "userman" ? customer : "",
-                ["server"] = "all",
-                ["status"] = _published ? "published" : "draft",
-                ["created_at"] = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:sszzz",
-                    CultureInfo.InvariantCulture)
-            }).ToList();
+            throw new CardGenerationException("أنشئ مسودة كروت قبل الطباعة أو التصدير.");
+        if (_draftTarget is null || !_draftTarget.Matches(
+                Choice(CardServiceCombo), CardProfileBox.Text, UmCustomerBox.Text) ||
+            _draftServer != SelectedCardServer() || !DraftOptionsStillCurrent())
+            throw new CardGenerationException(
+                "تغيرت الخدمة أو الباقة أو السيرفر أو إعدادات الكمية والبيانات بعد توليد المسودة؛ أنشئ مسودة جديدة قبل الطباعة أو التصدير.");
+        return VoucherBatchOutput.Select(_generated, _uploadAttempted,
+            _published, _acknowledgedUsernames);
+    }
+
+    private IReadOnlyList<IReadOnlyDictionary<string, string?>> CardRows()
+    {
+        var selected = CardsForOutput();
+        return VoucherExportRows.Build(selected, _draftTarget!.Service,
+            _draftTarget.Profile, _draftTarget.Customer,
+            _userManagerVersion,
+            _published || (_uploadAttempted && _acknowledgedUsernames.Count > 0),
+            _draftServer);
     }
 
     private void ExportExcel_Click(object sender, RoutedEventArgs e) =>
@@ -1187,6 +1407,7 @@ public partial class WorkspaceWindow : Window
         CardArtOptions? edited = CardArtworkEditorWindow.Edit(this, _cardArt);
         if (edited is null) return;
         _cardArt = edited;
+        RefreshInlineCardPreview();
         CardsNotice.Text = "تم تطبيق تصميم الكرت لهذه الجلسة. احفظ الباقة للإبقاء على التصميم بعد إعادة التشغيل.";
     }
 
@@ -1196,6 +1417,8 @@ public partial class WorkspaceWindow : Window
         PrintLayoutOptions? updated = PrintLayoutEditorWindow.Edit(this, _printLayout);
         if (updated is null) return;
         _printLayout = updated;
+        RefreshCardPageCount();
+        RefreshInlineCardPreview();
         PrintLayoutInfo.Text = DescribePrintLayout(updated);
         CardsNotice.Text = "اعتُمد تخطيط الورقة لهذه الجلسة. احفظ الباقة للإبقاء عليه بعد إعادة التشغيل.";
     }
@@ -1205,10 +1428,11 @@ public partial class WorkspaceWindow : Window
         if (!ConfirmCurrentAccess()) return;
         try
         {
-            WindowsVoucherPrinter.Preview(this, _generated, _printLayout, _cardArt);
+            WindowsVoucherPrinter.Preview(this, CardsForOutput(), _printLayout, _cardArt);
             CardsNotice.Text = "اكتملت معاينة الورقة الأولى، ولم يُرسل أي أمر للطابعة.";
         }
-        catch (Exception ex) when (ex is PrintLayoutException or InvalidOperationException)
+        catch (Exception ex) when (ex is PrintLayoutException or InvalidOperationException or
+            CardGenerationException)
         {
             CardsNotice.Text = "تعذرت معاينة التخطيط: " + ex.Message;
         }
@@ -1223,14 +1447,18 @@ public partial class WorkspaceWindow : Window
     private void PrintCards_Click(object sender, RoutedEventArgs e)
     {
         if (!ConfirmCurrentAccess()) return;
-        if (_generated.Count == 0)
+        IReadOnlyList<Voucher> cards;
+        try { cards = CardsForOutput(); }
+        catch (CardGenerationException ex)
         {
-            CardsNotice.Text = "أنشئ كروتا قبل الطباعة.";
+            CardsNotice.Text = ex.Message;
             return;
         }
 
         if (MessageBox.Show(this,
-            $"سيتم عرض اختيار الطابعة لإرسال {_generated.Count} كرت في نسخة واحدة.\n" +
+            $"سيتم عرض اختيار الطابعة لإرسال {cards.Count} كرت في نسخة واحدة.\n" +
+            (cards.Count < _generated.Count
+                ? "لن تُطبع الكروت التي لم يؤكد الراوتر إضافتها.\n" : "") +
             "سيرفض البرنامج أي تعريف لا يقبل أبعاد الورق والهوامش المحددة.\n" +
             "هل تريد متابعة الطباعة؟",
             "تأكيد الطباعة المباشرة",
@@ -1240,7 +1468,7 @@ public partial class WorkspaceWindow : Window
 
         try
         {
-            var result = WindowsVoucherPrinter.Print(this, _generated, _printLayout, _cardArt);
+            var result = WindowsVoucherPrinter.Print(this, cards, _printLayout, _cardArt);
             CardsNotice.Text = result.Message;
         }
         catch (Exception)
@@ -1251,16 +1479,42 @@ public partial class WorkspaceWindow : Window
         }
     }
 
+    private void ExportCardPreviewPng_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmCurrentAccess()) return;
+        try
+        {
+            // Source Python's design page exports a sample PNG, not a
+            // snapshot of unpublished or uncertain real voucher credentials.
+            Voucher sample = VoucherInlinePreview.Choose(
+                CurrentGenerationOptions(), CurrentCardMetadataOptions(),
+                [], generatedStillCurrent: false, DateTimeOffset.Now);
+            var chooser = new SaveFileDialog
+            {
+                Title = "حفظ صورة معاينة تصميم الكرت PNG",
+                FileName = "معاينة-كرت-حضرموت",
+                Filter = "PNG|*.png",
+                DefaultExt = ".png",
+                AddExtension = true,
+                OverwritePrompt = true
+            };
+            if (chooser.ShowDialog(this) != true) return;
+            CardPreviewPngExporter.Save(chooser.FileName, sample, _printLayout, _cardArt);
+            CardsNotice.Text = "تم حفظ صورة PNG للتصميم بدقة 300 DPI. بيانات الكرت تجريبية فقط، ولم يُرسل أي أمر إلى MikroTik.";
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or
+            PrintLayoutException or CardGenerationException or UnauthorizedAccessException)
+        {
+            CardsNotice.Text = "تعذر تصدير معاينة PNG: " + ex.Message;
+        }
+    }
+
     private void ExportPdf_Click(object sender, RoutedEventArgs e)
     {
         if (!ConfirmCurrentAccess()) return;
-        if (_generated.Count == 0)
-        {
-            CardsNotice.Text = "أنشئ مسودة كروت قبل تصدير PDF.";
-            return;
-        }
         try
         {
+            IReadOnlyList<Voucher> output = CardsForOutput();
             var dialog = new SaveFileDialog
             {
                 Title = "حفظ كروت حضرموت PDF",
@@ -1271,11 +1525,12 @@ public partial class WorkspaceWindow : Window
                 OverwritePrompt = true
             };
             if (dialog.ShowDialog(this) != true) return;
-            VoucherPdfExporter.SavePdf(_generated, dialog.FileName, _printLayout, _cardArt);
-            CardsNotice.Text = "تم حفظ PDF بأبعاد A4 فعلية وأرقام قابلة للنسخ.";
+            VoucherPdfExporter.SavePdf(output, dialog.FileName, _printLayout, _cardArt);
+            CardsNotice.Text = "تم حفظ PDF بمقاس " + _printLayout.Paper.ToUpperInvariant() +
+                " حسب تخطيط الطباعة المختار.";
         }
         catch (Exception ex) when (ex is IOException or PrintLayoutException or
-            InvalidOperationException or UnauthorizedAccessException)
+            InvalidOperationException or UnauthorizedAccessException or CardGenerationException)
         {
             CardsNotice.Text = "تعذر تصدير PDF: " + ex.Message;
         }
@@ -1324,6 +1579,10 @@ public partial class WorkspaceWindow : Window
                 CurrentCardMetadataOptions()))
                 settings[item.Key] = item.Value;
             settings["create.quantity"] = JsonSerializer.SerializeToElement(QtyBox.Text);
+            string chosenServer = SelectedCardServer();
+            if (chosenServer.Length == 0)
+                throw new CardGenerationException("اختر سيرفر Hotspot صريحا قبل حفظ إعدادات الباقة.");
+            settings["create.server"] = JsonSerializer.SerializeToElement(chosenServer);
             var legacy = new Dictionary<string, JsonElement>
             {
                 ["create.quantity"] = JsonSerializer.SerializeToElement(QtyBox.Text),
@@ -1342,9 +1601,13 @@ public partial class WorkspaceWindow : Window
                 settings[pair.Key] = pair.Value.Clone();
             foreach (var pair in CardArtPresetCodec.ToSettings(_cardArt))
                 settings[pair.Key] = pair.Value;
-            _packages.SavePackage(PackageNameBox.Text, settings);
+            long savedId = _packages.SaveOrUpdatePackage(PackageNameBox.Text, settings);
+            CardsPackageNameBox.Text = PackageNameBox.Text.Trim();
             ReloadPackages();
-            WorkspaceStatus.Text = "حُفظت إعدادات هذه الباقة في HadramoutNET فقط.";
+            PackagePreset? saved = (PackagesGrid.ItemsSource as IEnumerable<PackagePreset>)?
+                .FirstOrDefault(item => item.Id == savedId);
+            if (saved is not null) PackagesGrid.SelectedItem = saved;
+            WorkspaceStatus.Text = "حُفظت أو حُدثت إعدادات هذه الباقة بصورة مستقلة وستُستعاد بعد فتح البرنامج.";
         }
         catch (Exception ex) when (ex is ArgumentException or IOException or
             InvalidOperationException)
@@ -1353,12 +1616,44 @@ public partial class WorkspaceWindow : Window
         }
     }
 
+    private void SaveCardPackage_Click(object sender, RoutedEventArgs e)
+    {
+        PackageNameBox.Text = CardsPackageNameBox.Text;
+        SavePackage_Click(sender, e);
+    }
+
+    private void CardsPackagesCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_reloadingCardsPackages || PackagesGrid is null) return;
+        if (CardsPackagesCombo.SelectedItem is PackagePreset selected)
+            PackagesGrid.SelectedItem = selected;
+    }
+
     private void ReloadPackages_Click(object sender, RoutedEventArgs e) => ReloadPackages();
 
     private void ReloadPackages()
     {
         if (_packages is null) return;
-        try { PackagesGrid.ItemsSource = _packages.ListPackages(); }
+        try
+        {
+            long? selectedId = (PackagesGrid.SelectedItem as PackagePreset)?.Id
+                ?? PackageActiveSelection.Read(_packages);
+            var list = _packages.ListPackages();
+            PackagePreset? selected = selectedId is null ? null :
+                list.FirstOrDefault(item => item.Id == selectedId);
+            _reloadingCardsPackages = true;
+            try
+            {
+                PackagesGrid.ItemsSource = list;
+                CardsPackagesCombo.ItemsSource = list;
+                if (selected is not null)
+                {
+                    PackagesGrid.SelectedItem = selected;
+                    CardsPackagesCombo.SelectedItem = selected;
+                }
+            }
+            finally { _reloadingCardsPackages = false; }
+        }
         catch (Exception) { WorkspaceStatus.Text = "تعذر قراءة الباقات المحلية."; }
     }
 
@@ -1382,11 +1677,15 @@ public partial class WorkspaceWindow : Window
             return;
         }
         _printLayout = layout;
+        RefreshCardPageCount();
         _cardArt = artwork;
         _cardExtraSettings = CardTemplateExchange.ExtractExtras(
             selected.Settings);
         PrintLayoutInfo.Text = DescribePrintLayout(layout);
         PackageNameBox.Text = selected.Name;
+        CardsPackageNameBox.Text = selected.Name;
+        if (!ReferenceEquals(CardsPackagesCombo.SelectedItem, selected))
+            CardsPackagesCombo.SelectedItem = selected;
         var values = selected.Settings;
         QtyBox.Text = generation.Quantity.ToString(CultureInfo.InvariantCulture);
         CardLengthBox.Text = generation.CodeLength.ToString(CultureInfo.InvariantCulture);
@@ -1407,9 +1706,244 @@ public partial class WorkspaceWindow : Window
         if (values.TryGetValue("create.customer", out var owner) &&
             owner.ValueKind == JsonValueKind.String) UmCustomerBox.Text = owner.GetString();
         SelectChoice(CardFormatCombo, generation.Format);
+        SyncCredentialPresentation();
+        SyncCharsetPresentation();
         if (values.TryGetValue("create.service", out var service) &&
             service.ValueKind == JsonValueKind.String) SelectChoice(CardServiceCombo, service.GetString());
+        if (values.TryGetValue("create.server", out var serverValue) &&
+            serverValue.ValueKind == JsonValueKind.String)
+        {
+            string server = serverValue.GetString() ?? "all";
+            if (server != "all" && !CardServerCombo.Items.OfType<ComboBoxItem>()
+                .Any(item => item.Tag?.ToString() == server))
+                CardServerCombo.Items.Add(new ComboBoxItem { Content = server, Tag = server });
+            SelectChoice(CardServerCombo, server);
+        }
+        UpdateCreationFormOptions();
+        RefreshInlineCardPreview();
         WorkspaceStatus.Text = "استُعيدت خيارات الإنشاء والسعر والسعة والمدة والصلاحية وتصميم الطباعة لهذه الباقة.";
+        if (_packages is not null)
+        {
+            try { PackageActiveSelection.Save(_packages, selected.Id); }
+            catch (Exception)
+            {
+                WorkspaceStatus.Text = "استُعيدت الباقة، لكن تعذر تذكر الباقة المختارة للتشغيل القادم.";
+            }
+        }
+    }
+
+
+    // The original Python UI uses two visible steps: username-only or
+    // username/password, then a mutually exclusive relation. CardFormatCombo
+    // remains the single persisted format and generation source.
+    private void CardFormat_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingCardCredentialUi) return;
+        SyncCredentialPresentation();
+        UpdateCreationFormOptions();
+    }
+
+    private void SyncCredentialPresentation()
+    {
+        if (CardFormatCombo is null || CardCredentialModeCombo is null ||
+            DifferentPasswordCheck is null || SamePasswordCheck is null ||
+            _syncingCardCredentialUi) return;
+        string format = Choice(CardFormatCombo);
+        if (format is not ("code_only" or "code_same_password" or "code_password"))
+            return;
+        _syncingCardCredentialUi = true;
+        try
+        {
+            if (format != "code_only") _lastCardPasswordRelation = format;
+            SelectChoice(CardCredentialModeCombo,
+                format == "code_only" ? "username_only" : "username_password");
+            bool showRelation = format != "code_only";
+            DifferentPasswordCheck.IsEnabled = showRelation;
+            SamePasswordCheck.IsEnabled = showRelation;
+            DifferentPasswordCheck.IsChecked = showRelation && format == "code_password";
+            SamePasswordCheck.IsChecked = showRelation && format == "code_same_password";
+        }
+        finally { _syncingCardCredentialUi = false; }
+    }
+
+    private void CardCredentialMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingCardCredentialUi || CardCredentialModeCombo is null ||
+            CardFormatCombo is null) return;
+        string mode = Choice(CardCredentialModeCombo);
+        if (mode is not ("username_only" or "username_password")) return;
+        SelectChoice(CardFormatCombo, VoucherCreationPresentation.ResolveFormat(
+            mode, _lastCardPasswordRelation));
+    }
+
+    private void CardPasswordRelation_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_syncingCardCredentialUi || sender is not CheckBox selected ||
+            CardCredentialModeCombo is null || CardFormatCombo is null) return;
+        if (selected.IsChecked != true)
+        {
+            // An unchecked selected option must not produce an invalid mode
+            // with both relationship checkboxes cleared.
+            SyncCredentialPresentation();
+            return;
+        }
+        _lastCardPasswordRelation = ReferenceEquals(selected, SamePasswordCheck)
+            ? "code_same_password" : "code_password";
+        SelectChoice(CardCredentialModeCombo, "username_password");
+        SelectChoice(CardFormatCombo, _lastCardPasswordRelation);
+        SyncCredentialPresentation();
+    }
+
+    private void CardCharset_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingCardCharsetUi || UsernameCharsetCombo is null ||
+            PasswordCharsetCombo is null || CardAlphabetBox is null ||
+            PasswordAlphabetBox is null || sender is not ComboBox combo) return;
+        string mode = Choice(combo);
+        if (mode is "custom" or "") return;
+        _syncingCardCharsetUi = true;
+        try
+        {
+            string alphabet = VoucherCreationPresentation.CharactersForMode(mode);
+            if (ReferenceEquals(combo, UsernameCharsetCombo))
+                CardAlphabetBox.Text = alphabet;
+            else if (ReferenceEquals(combo, PasswordCharsetCombo))
+                PasswordAlphabetBox.Text = alphabet;
+        }
+        finally { _syncingCardCharsetUi = false; }
+    }
+
+    private void CardAlphabet_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_syncingCardCharsetUi || UsernameCharsetCombo is null ||
+            PasswordCharsetCombo is null || CardAlphabetBox is null ||
+            PasswordAlphabetBox is null) return;
+        SyncCharsetPresentation();
+    }
+
+    private void SyncCharsetPresentation()
+    {
+        if (_syncingCardCharsetUi || UsernameCharsetCombo is null ||
+            PasswordCharsetCombo is null || CardAlphabetBox is null ||
+            PasswordAlphabetBox is null) return;
+        _syncingCardCharsetUi = true;
+        try
+        {
+            SelectChoice(UsernameCharsetCombo,
+                VoucherCreationPresentation.DetectCharacterMode(CardAlphabetBox.Text));
+            SelectChoice(PasswordCharsetCombo,
+                VoucherCreationPresentation.DetectCharacterMode(PasswordAlphabetBox.Text));
+        }
+        finally { _syncingCardCharsetUi = false; }
+    }
+
+    private void CardService_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        UpdateCreationFormOptions();
+        if (IsLoaded) _ = LoadCreationTargetsAsync();
+    }
+
+    private void CardTargets_DropDownOpened(object sender, EventArgs e)
+    {
+        if (IsLoaded) _ = LoadCreationTargetsAsync();
+    }
+
+    private void UpdateCreationFormOptions()
+    {
+        if (CardFormatCombo is null || CardServiceCombo is null ||
+            PasswordLengthBox is null || PasswordAlphabetBox is null ||
+            CardServerCombo is null || UmCustomerBox is null ||
+            CardCapacityBox is null || CapacityUnitCombo is null ||
+            CardHoursBox is null || CardMinutesBox is null || CardQuotaNote is null)
+            return;
+        bool different = Choice(CardFormatCombo) == "code_password";
+        PasswordLengthBox.IsEnabled = different;
+        PasswordAlphabetBox.IsEnabled = different;
+        if (PasswordCharsetCombo is not null) PasswordCharsetCombo.IsEnabled = different;
+        string service = Choice(CardServiceCombo);
+        CardServerCombo.IsEnabled = service == "hotspot";
+        UmCustomerBox.IsEnabled = service == "userman";
+        bool hotspot = service == "hotspot";
+        CardCapacityBox.IsEnabled = hotspot;
+        CapacityUnitCombo.IsEnabled = hotspot;
+        CardHoursBox.IsEnabled = hotspot;
+        CardMinutesBox.IsEnabled = hotspot;
+        CardQuotaNote.Text = hotspot
+            ? "تُطبق حدود السعة والوقت على مستخدم Hotspot عند الرفع."
+            : "السعة والوقت الفعليان لخدمة PPP وUser Manager يأتيان من باقة الراوتر.";
+    }
+
+    private async Task LoadCreationTargetsAsync()
+    {
+        if (_readingCardTargets || !IsLoaded || !ConfirmCurrentAccess()) return;
+        string service = Choice(CardServiceCombo);
+        if (service is not ("hotspot" or "ppp" or "userman")) return;
+        _readingCardTargets = true;
+        try
+        {
+            RouterCardTargets found = await _cardTargets.ReadAsync(
+                _session, service, _cancel.Token);
+            if (!IsLoaded || service != Choice(CardServiceCombo)) return;
+            if (!found.Available)
+            {
+                CardsNotice.Text = found.Reason switch
+                {
+                    "incomplete" => "قراءة قائمة الباقات أو السيرفرات غير مكتملة؛ لم تُعتبر فارغة.",
+                    "not_installed" => "خدمة User Manager غير مثبتة على هذا الراوتر.",
+                    _ => "تعذرت قراءة الباقات أو السيرفرات؛ تحقق من صلاحيات MikroTik."
+                };
+                return;
+            }
+
+            // Read current form values AFTER the asynchronous operation.
+            // Switching saved packages must never overwrite their values.
+            string currentProfile = CardProfileBox.Text;
+            string currentServer = SelectedCardServer();
+            CardProfileBox.Items.Clear();
+            foreach (RouterCardProfile profile in found.Profiles)
+                CardProfileBox.Items.Add(profile.Name);
+            CardProfileBox.Text = currentProfile;
+            CardServerCombo.Items.Clear();
+            CardServerCombo.Items.Add(new ComboBoxItem { Content = "all", Tag = "all" });
+            foreach (string server in found.Servers)
+                CardServerCombo.Items.Add(new ComboBoxItem { Content = server, Tag = server });
+            string? retainedServer = RouterCardServerSelection.Retain(
+                currentServer, found.Servers);
+            if (retainedServer is not null)
+                SelectChoice(CardServerCombo, retainedServer);
+            else
+            {
+                CardServerCombo.SelectedIndex = -1;
+                CardsNotice.Text = "السيرفر المحفوظ لم يعد موجودا؛ اختر سيرفرا من MikroTik أو all بصورة صريحة. لم يتحول الاختيار تلقائيا إلى جميع السيرفرات.";
+            }
+
+            if (service == "userman")
+            {
+                _userManagerVersion = found.UserManagerVersion;
+                if (found.UserManagerVersion == 6 && string.IsNullOrWhiteSpace(UmCustomerBox.Text))
+                {
+                    string owner = found.Profiles.FirstOrDefault(p =>
+                        string.Equals(p.Name, currentProfile, StringComparison.Ordinal))?.Owner ?? "";
+                    if (!string.IsNullOrWhiteSpace(owner)) UmCustomerBox.Text = owner;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (_cancel.IsCancellationRequested) { }
+        catch (InvalidOperationException)
+        {
+            if (IsLoaded) LockWorkspace();
+        }
+        catch (Exception)
+        {
+            if (IsLoaded) CardsNotice.Text = "فشلت قراءة باقات الإنشاء؛ لم تتغير الخيارات الحالية.";
+        }
+        finally
+        {
+            _readingCardTargets = false;
+            if (IsLoaded && service != Choice(CardServiceCombo) &&
+                !_cancel.IsCancellationRequested)
+                _ = LoadCreationTargetsAsync();
+        }
     }
 
     private static void SelectChoice(ComboBox combo, string? tag)
@@ -1972,6 +2506,7 @@ public partial class WorkspaceWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _cardPreviewDebounce.Stop();
         _heartbeat.Stop();
         _cancel.Cancel();
         base.OnClosed(e);

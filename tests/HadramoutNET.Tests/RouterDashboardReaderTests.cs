@@ -37,7 +37,8 @@ public sealed class RouterDashboardReaderTests
             var resource = await RouterOsSentenceCodec.ReadAsync(stream, deadline.Token);
             Assert.Contains("/system/resource/print", resource);
             await Reply(stream, "!re", "=cpu-load=41", "=total-memory=1000",
-                "=free-memory=250", "=version=6.49.19", "=uptime=1d2h");
+                "=free-memory=250", "=version=6.49.19", "=uptime=1d2h",
+                "=board-name=RB1100AHx4");
             await Reply(stream, "!done");
 
             foreach (var (command, count) in new[]
@@ -64,6 +65,8 @@ public sealed class RouterDashboardReaderTests
         await using var session = result.Session!;
         var dashboard = await new RouterDashboardReader().ReadAsync(session, deadline.Token);
         Assert.Equal("My-MikroTik", dashboard.RouterName);
+        Assert.Equal("RB1100AHx4",
+            dashboard.GetType().GetProperty("RouterBoardName")?.GetValue(dashboard));
         Assert.Equal("6.49.19", dashboard.RouterOsVersion);
         Assert.Equal("1d2h", dashboard.Uptime);
         Assert.Equal(41, dashboard.CpuPercent);

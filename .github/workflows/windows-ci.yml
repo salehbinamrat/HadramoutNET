@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - main
+      - 'migration/**'
   workflow_dispatch:
 
 # Push and pull_request from the same migration branch can both start

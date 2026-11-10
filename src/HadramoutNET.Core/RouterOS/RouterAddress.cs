@@ -23,13 +23,13 @@ public static class RouterAddress
         if (mode is not ("local" or "remote"))
             throw new ArgumentException("اختر نوع الاتصال: محلي أو عن بُعد.", nameof(mode));
 
-        string host = address?.Trim() ?? "";
+        string host = AsciiNumerals.Normalize(address?.Trim());
         if (host.Length is 0 or > 1024 || host.Any(c =>
             char.IsWhiteSpace(c) || char.IsControl(c) ||
             CharUnicodeInfo.GetUnicodeCategory(c) == UnicodeCategory.Format))
             throw InvalidAddress();
 
-        if (!int.TryParse(apiPort?.Trim(), NumberStyles.None,
+        if (!int.TryParse(AsciiNumerals.Normalize(apiPort?.Trim()), NumberStyles.None,
                 CultureInfo.InvariantCulture, out int port) || port is < 1 or > 65535)
             throw new ArgumentException(mode == "remote"
                 ? "أدخل منفذ API الخارجي من مزود الرابط (1–65535)، وليس منفذ WinBox تلقائياً."

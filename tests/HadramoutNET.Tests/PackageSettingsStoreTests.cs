@@ -68,6 +68,52 @@ public sealed class PackageSettingsStoreTests
         Assert.Equal(2, reopened.ListPackages().Count);
     }
 
+
+    [Fact]
+    public void Saving_existing_package_name_updates_settings_without_duplication_even_after_restart()
+    {
+        string path = NewPath();
+        var store = new PackageSettingsStore(path);
+        long originalId = store.SaveOrUpdatePackage("باقة المكلا", new Dictionary<string, JsonElement>
+        {
+            ["create.quantity"] = J(20), ["print.rows"] = J(10),
+            ["card.font_size"] = J(14)
+        });
+        long otherId = store.SaveOrUpdatePackage("باقة سيئون", new Dictionary<string, JsonElement>
+        {
+            ["create.quantity"] = J(100)
+        });
+        long revisedId = store.SaveOrUpdatePackage(" باقة المكلا ", new Dictionary<string, JsonElement>
+        {
+            ["create.quantity"] = J(60), ["print.rows"] = J(15),
+            ["card.font_size"] = J(16)
+        });
+        Assert.Equal(originalId, revisedId);
+        var reopened = new PackageSettingsStore(path);
+        Assert.Equal(2, reopened.ListPackages().Count);
+        Assert.Equal(60, reopened.GetPackage(originalId)!.Settings["create.quantity"].GetInt32());
+        Assert.Equal(15, reopened.GetPackage(originalId)!.Settings["print.rows"].GetInt32());
+        Assert.Equal(16, reopened.GetPackage(originalId)!.Settings["card.font_size"].GetInt32());
+        Assert.Equal(100, reopened.GetPackage(otherId)!.Settings["create.quantity"].GetInt32());
+    }
+
+    [Fact]
+    public void Upserting_package_names_uses_the_database_case_insensitive_unique_key()
+    {
+        var store = new PackageSettingsStore(NewPath());
+        long first = store.SaveOrUpdatePackage("Starter", new Dictionary<string, JsonElement>
+        {
+            ["create.quantity"] = J(10)
+        });
+        long same = store.SaveOrUpdatePackage("starter", new Dictionary<string, JsonElement>
+        {
+            ["create.quantity"] = J(30)
+        });
+        Assert.Equal(first, same);
+        Assert.Single(store.ListPackages());
+        Assert.Equal(30, store.GetPackage(first)!.Settings["create.quantity"].GetInt32());
+    }
+
     [Fact]
     public void Duplicate_names_ignore_ascii_case_and_do_not_change_original_package()
     {

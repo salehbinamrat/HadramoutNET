@@ -6,6 +6,7 @@ using System.Windows.Media.Imaging;
 using System.IO;
 using Microsoft.Win32;
 using HadramoutNET.Core.Printing;
+using HadramoutNET.Core.Visual;
 
 namespace HadramoutNET.App;
 
@@ -118,10 +119,23 @@ internal static class CardArtworkEditorWindow
         var qrSize = TextField(content, "حجم QR بالمليمتر",
             current.QrSizeMm.ToString("G17", CultureInfo.InvariantCulture));
 
+        TechnicalTextInput.Attach(qrSize);
         content.Children.Add(new TextBlock {
             Text = "إعدادات خطوط وإطار الكرت", FontWeight = FontWeights.Bold,
             Margin = new Thickness(0, 9, 0, 7)
         });
+        content.Children.Add(new TextBlock
+        {
+            Text = "نوع الخط (تُطبق على Windows وPDF)", FontWeight = FontWeights.SemiBold
+        });
+        var fontFamily = new ComboBox { Height = 33, Margin = new Thickness(0, 3, 0, 8) };
+        foreach (string family in new[] { "Arial", "Tahoma" })
+        {
+            var item = new ComboBoxItem { Content = family, Tag = family };
+            fontFamily.Items.Add(item);
+            if (current.FontFamily == family) fontFamily.SelectedItem = item;
+        }
+        content.Children.Add(fontFamily);
         var fontSize = TextField(content, "حجم الخط المرجعي (1-300)",
             current.FontSize.ToString("G", CultureInfo.InvariantCulture));
         var fontBold = Toggle(content, "الخط الأساسي عريض", current.FontBold);
@@ -136,6 +150,9 @@ internal static class CardArtworkEditorWindow
             current.BorderWidth.ToString("G", CultureInfo.InvariantCulture));
         var borderRadius = TextField(content, "استدارة زوايا الإطار (0-100)",
             current.BorderRadius.ToString("G", CultureInfo.InvariantCulture));
+
+        foreach (TextBox numeric in new[] { fontSize, borderWidth, borderRadius })
+            TechnicalTextInput.Attach(numeric);
 
         string? backgroundData = current.BackgroundData;
         content.Children.Add(new TextBlock {
@@ -244,6 +261,8 @@ internal static class CardArtworkEditorWindow
                 Text = point.X.ToString("G", CultureInfo.InvariantCulture) };
             var y = new TextBox { Width = 70, Height = 28, Margin = new Thickness(3),
                 Text = point.Y.ToString("G", CultureInfo.InvariantCulture) };
+            TechnicalTextInput.Attach(x);
+            TechnicalTextInput.Attach(y);
             row.Children.Add(new TextBlock { Text = "X", VerticalAlignment = VerticalAlignment.Center });
             row.Children.Add(x);
             row.Children.Add(new TextBlock { Text = "Y", VerticalAlignment = VerticalAlignment.Center });
@@ -259,6 +278,7 @@ internal static class CardArtworkEditorWindow
                 var scale = new TextBox { Width = 63, Height = 28,
                     Margin = new Thickness(3),
                     Text = factor.ToString("G", CultureInfo.InvariantCulture) };
+                TechnicalTextInput.Attach(scale);
                 row.Children.Add(scale);
                 scaleInputs[key] = scale;
                 if (key is not ("username" or "password"))
@@ -278,6 +298,13 @@ internal static class CardArtworkEditorWindow
             content.Children.Add(row);
         }
 
+        // The source Python card editor supports dragging existing layers.
+        // Changes here modify only the staged X/Y text boxes; the original
+        // settings remain untouched until the operator accepts this dialog.
+        content.Children.Add(CardArtworkDragPreview.Create(positions,
+            Layers.ToDictionary(item => item.Key, item => item.Title,
+                StringComparer.Ordinal)));
+
         var feedback = new TextBlock { Foreground = Brushes.DarkRed,
             TextWrapping = TextWrapping.Wrap, Margin = new Thickness(3, 12, 3, 5) };
         content.Children.Add(feedback);
@@ -293,8 +320,7 @@ internal static class CardArtworkEditorWindow
             {
                 double Read(TextBox box, double lower, double upper)
                 {
-                    if (!double.TryParse(box.Text.Trim(), NumberStyles.Float,
-                            CultureInfo.InvariantCulture, out double v) ||
+                    if (!TechnicalNumberParser.TryFiniteDouble(box.Text, out double v) ||
                         !double.IsFinite(v) || v < lower || v > upper)
                         throw new PrintLayoutException("إحداثيات أو مقاسات غير صالحة.");
                     return v;
@@ -336,6 +362,8 @@ internal static class CardArtworkEditorWindow
                     QrLoginUrl = qrUrl.Text,
                     QrSizeMm = Read(qrSize, 1, 300),
                     FontSize = Read(fontSize, 1, 300),
+                    FontFamily = (fontFamily.SelectedItem as ComboBoxItem)?.Tag?.ToString()
+                        ?? "Arial",
                     FontBold = Selected(fontBold),
                     FontColor = fontColor.Text,
                     UsernameColor = credentialColor.Text,
@@ -367,6 +395,7 @@ internal static class CardArtworkEditorWindow
         {
             Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto
         };
+        window.SourceInitialized += (_, _) => WindowWorkArea.Fit(window);
         return window.ShowDialog() == true ? chosen : null;
     }
 }
