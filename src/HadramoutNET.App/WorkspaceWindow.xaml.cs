@@ -796,6 +796,48 @@ public partial class WorkspaceWindow : Window
         return options;
     }
 
+    private void CardLivePreview_Click(object sender, RoutedEventArgs e) =>
+        RefreshInlineCardPreview();
+
+    /// <summary>
+    /// Reuses the exact Windows card renderer. An unchanged local draft shows
+    /// its first real voucher; otherwise render one throwaway offline sample.
+    /// Never contacts RouterOS, writes files or publishes credentials.
+    /// </summary>
+    private void RefreshInlineCardPreview()
+    {
+        if (LiveCardPreviewContent is null || LiveCardPreviewStatus is null) return;
+        try
+        {
+            CardGenerationOptions options = CurrentGenerationOptions();
+            VoucherCardMetadataOptions metadata = CurrentCardMetadataOptions();
+            bool currentDraft = _generated.Count > 0 && _draftTarget is not null &&
+                _draftTarget.Matches(Choice(CardServiceCombo),
+                    CardProfileBox.Text, UmCustomerBox.Text) &&
+                _draftServer == SelectedCardServer() && DraftOptionsStillCurrent();
+            Voucher card = VoucherInlinePreview.Choose(
+                options, metadata, _generated, currentDraft, DateTimeOffset.Now);
+            FrameworkElement render = WindowsVoucherPrinter.BuildInlineCard(
+                card, _printLayout, _cardArt);
+            LiveCardPreviewContent.Content = new Viewbox
+            {
+                Width = 505,
+                Height = 174,
+                Stretch = Stretch.Uniform,
+                Child = render
+            };
+            LiveCardPreviewStatus.Text = currentDraft
+                ? "المعروض هو الكرت الأول من الدفعة الحالية بتصميم الطباعة نفسه."
+                : "عينة محلية للتصميم فقط؛ لم تُحفظ أو تُرسل للراوتر، وقد تختلف الأرقام الفعلية.";
+        }
+        catch (Exception ex) when (ex is CardGenerationException or
+            PrintLayoutException or InvalidOperationException or IOException or ArgumentException)
+        {
+            LiveCardPreviewContent.Content = null;
+            LiveCardPreviewStatus.Text = "تعذرت معاينة التصميم: " + ex.Message;
+        }
+    }
+
     private void PreviewBeforeCreate_Click(object sender, RoutedEventArgs e)
     {
         if (_uploading || _verifyingUmDraft || !ConfirmCurrentAccess()) return;
@@ -849,6 +891,7 @@ public partial class WorkspaceWindow : Window
             _acknowledgedUsernames = new HashSet<string>(StringComparer.Ordinal);
             _deliveryUncertain = false;
             CardGrid.ItemsSource = _generated;
+            RefreshInlineCardPreview();
             CardsNotice.Text = $"تم إنشاء {_generated.Count} مسودة؛ لم ترفع إلى MikroTik.";
             WorkspaceStatus.Text = "راجع الأرقام وكلمات المرور قبل تصدير أي ملف.";
         }
@@ -1295,6 +1338,7 @@ public partial class WorkspaceWindow : Window
         CardArtOptions? edited = CardArtworkEditorWindow.Edit(this, _cardArt);
         if (edited is null) return;
         _cardArt = edited;
+        RefreshInlineCardPreview();
         CardsNotice.Text = "تم تطبيق تصميم الكرت لهذه الجلسة. احفظ الباقة للإبقاء على التصميم بعد إعادة التشغيل.";
     }
 
@@ -1304,6 +1348,7 @@ public partial class WorkspaceWindow : Window
         PrintLayoutOptions? updated = PrintLayoutEditorWindow.Edit(this, _printLayout);
         if (updated is null) return;
         _printLayout = updated;
+        RefreshInlineCardPreview();
         PrintLayoutInfo.Text = DescribePrintLayout(updated);
         CardsNotice.Text = "اعتُمد تخطيط الورقة لهذه الجلسة. احفظ الباقة للإبقاء عليه بعد إعادة التشغيل.";
     }
@@ -1574,6 +1619,7 @@ public partial class WorkspaceWindow : Window
             SelectChoice(CardServerCombo, server);
         }
         UpdateCreationFormOptions();
+        RefreshInlineCardPreview();
         WorkspaceStatus.Text = "استُعيدت خيارات الإنشاء والسعر والسعة والمدة والصلاحية وتصميم الطباعة لهذه الباقة.";
         if (_packages is not null)
         {

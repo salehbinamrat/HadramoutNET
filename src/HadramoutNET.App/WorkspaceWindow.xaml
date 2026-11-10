@@ -318,7 +318,8 @@
                         <StackPanel Grid.Row="1" Margin="0,0,0,8" FlowDirection="RightToLeft">
                          <Grid>
                          <Grid.ColumnDefinitions><ColumnDefinition Width="58*"/><ColumnDefinition Width="42*"/></Grid.ColumnDefinitions>
-                             <Border Grid.Column="0" BorderBrush="{StaticResource SandBorder}" BorderThickness="1" Background="White"
+                             <StackPanel Grid.Column="0">
+<Border Grid.Column="0" BorderBrush="{StaticResource SandBorder}" BorderThickness="1" Background="White"
                                  CornerRadius="7" Padding="8" Margin="4">
                              <StackPanel>
                                  <TextBlock Text="01 — الباقة والمسار" FontWeight="Bold" FontSize="16"
@@ -370,7 +371,31 @@
                         </WrapPanel>
                              </StackPanel>
                          </Border>
-                             <Border Grid.Column="1" BorderBrush="{StaticResource SandBorder}" BorderThickness="1" Background="White"
+                             <Border Background="#FFF7EE" BorderBrush="{StaticResource SandBorder}"
+        BorderThickness="1" CornerRadius="7" Margin="4,8,4,2" Padding="9">
+    <StackPanel>
+        <DockPanel LastChildFill="True">
+            <Button DockPanel.Dock="Left" Content="تحديث معاينة التصميم"
+                    Width="168" Height="32" Click="CardLivePreview_Click"
+                    Style="{StaticResource NavyReplacementButton}"/>
+            <TextBlock Text="◈ معاينة تصميم الكرت" FontSize="15" FontWeight="Bold"
+                       Foreground="{StaticResource DarkRed}"
+                       VerticalAlignment="Center" Margin="4"/>
+        </DockPanel>
+        <Border Height="184" Background="White" Margin="2,7,2,5"
+                BorderBrush="#CCB4A6" BorderThickness="1" CornerRadius="4">
+            <ContentControl x:Name="LiveCardPreviewContent"
+                            HorizontalContentAlignment="Center"
+                            VerticalContentAlignment="Center"/>
+        </Border>
+        <TextBlock x:Name="LiveCardPreviewStatus"
+                   Text="اضغط تحديث معاينة التصميم؛ المعاينة لا تنشئ مستخدمين ولا ترسل إلى الراوتر."
+                   FontSize="11" TextWrapping="Wrap"
+                   Foreground="{StaticResource TextMuted}" Margin="5,0,5,2"/>
+    </StackPanel>
+</Border>
+</StackPanel>
+<Border Grid.Column="1" BorderBrush="{StaticResource SandBorder}" BorderThickness="1" Background="White"
                                  CornerRadius="7" Padding="8" Margin="4">
                              <StackPanel>
                                  <TextBlock Text="02 — اسم المستخدم وكلمة المرور" FontWeight="Bold" FontSize="16"

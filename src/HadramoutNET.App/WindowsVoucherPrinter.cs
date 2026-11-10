@@ -176,6 +176,26 @@ internal static class WindowsVoucherPrinter
         window.ShowDialog();
     }
 
+    /// <summary>
+    /// Inline first-card design preview. Reuses exactly the native Windows
+    /// card renderer and background without opening a printer or saving a file.
+    /// The PDF exporter consumes the same CardArtwork scene model.
+    /// </summary>
+    internal static FrameworkElement BuildInlineCard(Voucher voucher,
+        PrintLayoutOptions layout, CardArtOptions artwork)
+    {
+        ArgumentNullException.ThrowIfNull(voucher);
+        ArgumentNullException.ThrowIfNull(layout);
+        ArgumentNullException.ThrowIfNull(artwork);
+        _ = PrintLayouts.Plan(layout, 1);
+        CardArtPresetCodec.Validate(artwork);
+        const double dipPerMm = 96.0 / 25.4;
+        return RenderCard(voucher,
+            layout.CardWidthMm * dipPerMm,
+            layout.CardHeightMm * dipPerMm,
+            artwork, LoadBackground(artwork));
+    }
+
     private static FixedDocument BuildDocument(
         IReadOnlyList<Voucher> cards, NativePrintJobContract contract,
         CardArtOptions? artwork = null)
