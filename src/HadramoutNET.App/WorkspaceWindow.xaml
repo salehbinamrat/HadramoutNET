@@ -316,8 +316,9 @@
                                    Foreground="{StaticResource DarkRed}"
                                    FontWeight="Bold" Margin="5,4,5,11"/>
                         <StackPanel Grid.Row="1" Margin="0,0,0,8" FlowDirection="RightToLeft">
-                         <UniformGrid Columns="2" Rows="1">
-                             <Border BorderBrush="{StaticResource SandBorder}" BorderThickness="1" Background="White"
+                         <Grid>
+                         <Grid.ColumnDefinitions><ColumnDefinition Width="58*"/><ColumnDefinition Width="42*"/></Grid.ColumnDefinitions>
+                             <Border Grid.Column="0" BorderBrush="{StaticResource SandBorder}" BorderThickness="1" Background="White"
                                  CornerRadius="7" Padding="8" Margin="4">
                              <StackPanel>
                                  <TextBlock Text="01 — الباقة والمسار" FontWeight="Bold" FontSize="16"
@@ -369,32 +370,52 @@
                         </WrapPanel>
                              </StackPanel>
                          </Border>
-                             <Border BorderBrush="{StaticResource SandBorder}" BorderThickness="1" Background="White"
+                             <Border Grid.Column="1" BorderBrush="{StaticResource SandBorder}" BorderThickness="1" Background="White"
                                  CornerRadius="7" Padding="8" Margin="4">
                              <StackPanel>
                                  <TextBlock Text="02 — اسم المستخدم وكلمة المرور" FontWeight="Bold" FontSize="16"
                                             Foreground="{StaticResource DarkRed}" Margin="6,3,6,7"/>
                                  <WrapPanel FlowDirection="RightToLeft">
 <StackPanel Margin="5">
-                                <TextBlock Text="صيغة الدخول"/>
-                                <ComboBox x:Name="CardFormatCombo" Width="215" Height="35"
-                                           SelectionChanged="CardFormat_SelectionChanged"
-                                          SelectedIndex="0">
-                                    <ComboBoxItem Content="اسم مستخدم فقط" Tag="code_only"/>
-                                    <ComboBoxItem Content="اسم وكلمة مرور متطابقان" Tag="code_same_password"/>
-                                    <ComboBoxItem Content="اسم وكلمة مرور مختلفان" Tag="code_password"/>
-                                </ComboBox>
-                            </StackPanel>
+    <TextBlock Text="صيغة الدخول" FontWeight="SemiBold"/>
+    <WrapPanel FlowDirection="RightToLeft">
+        <ComboBox x:Name="CardCredentialModeCombo" Width="165" Height="35"
+                  SelectedIndex="0" SelectionChanged="CardCredentialMode_SelectionChanged">
+            <ComboBoxItem Content="اسم مستخدم فقط" Tag="username_only"/>
+            <ComboBoxItem Content="اسم مستخدم وكلمة مرور" Tag="username_password"/>
+        </ComboBox>
+        <CheckBox x:Name="DifferentPasswordCheck" Content="مختلفتين" Margin="7,0,0,0"
+                  VerticalAlignment="Center" Checked="CardPasswordRelation_Changed"
+                  Unchecked="CardPasswordRelation_Changed"/>
+        <CheckBox x:Name="SamePasswordCheck" Content="متطابقتين" Margin="7,0,0,0"
+                  VerticalAlignment="Center" Checked="CardPasswordRelation_Changed"
+                  Unchecked="CardPasswordRelation_Changed"/>
+    </WrapPanel>
+    <ComboBox x:Name="CardFormatCombo" Height="0" Visibility="Collapsed"
+              SelectionChanged="CardFormat_SelectionChanged" SelectedIndex="0">
+        <ComboBoxItem Content="اسم مستخدم فقط" Tag="code_only"/>
+        <ComboBoxItem Content="اسم وكلمة مرور متطابقان" Tag="code_same_password"/>
+        <ComboBoxItem Content="اسم وكلمة مرور مختلفان" Tag="code_password"/>
+    </ComboBox>
+</StackPanel>
 <StackPanel Margin="5">
                                 <TextBlock Text="طول الرقم"/>
                                 <TextBox x:Name="CardLengthBox" Width="95" Text="8" FlowDirection="LeftToRight" Language="en-US"
                                        TextChanged="TechnicalNumericInput_TextChanged"/>
                             </StackPanel>
 <StackPanel Margin="5">
-                                <TextBlock Text="الحروف/الأرقام"/>
-                                <TextBox x:Name="CardAlphabetBox" Width="145"
-                                         Text="0123456789"/>
-                            </StackPanel>
+    <TextBlock Text="نوع أحرف المستخدم"/>
+    <ComboBox x:Name="UsernameCharsetCombo" Width="150" Height="35" SelectedIndex="0"
+              SelectionChanged="CardCharset_SelectionChanged">
+        <ComboBoxItem Content="أرقام فقط" Tag="digits"/>
+        <ComboBoxItem Content="أحرف فقط" Tag="letters"/>
+        <ComboBoxItem Content="مختلطة" Tag="mixed"/>
+        <ComboBoxItem Content="مخصصة" Tag="custom"/>
+    </ComboBox>
+    <TextBlock Text="أحرف اسم المستخدم"/>
+    <TextBox x:Name="CardAlphabetBox" Width="150" Text="0123456789"
+             TextChanged="CardAlphabet_TextChanged"/>
+</StackPanel>
 <StackPanel Margin="5">
                                 <TextBlock Text="بادئة اسم المستخدم"/>
                                 <TextBox x:Name="CardPrefixBox" Width="135" MaxLength="64"/>
@@ -405,14 +426,23 @@
                                        TextChanged="TechnicalNumericInput_TextChanged"/>
                             </StackPanel>
 <StackPanel Margin="5">
-                                <TextBlock Text="أحرف كلمة المرور"/>
-                                <TextBox x:Name="PasswordAlphabetBox" Width="200"
-                                         Text="abcdefghijklmnopqrstuvwxyz0123456789"/>
-                            </StackPanel>
+    <TextBlock Text="نوع أحرف المرور"/>
+    <ComboBox x:Name="PasswordCharsetCombo" Width="150" Height="35" SelectedIndex="2"
+              SelectionChanged="CardCharset_SelectionChanged">
+        <ComboBoxItem Content="أرقام فقط" Tag="digits"/>
+        <ComboBoxItem Content="أحرف فقط" Tag="letters"/>
+        <ComboBoxItem Content="مختلطة" Tag="mixed"/>
+        <ComboBoxItem Content="مخصصة" Tag="custom"/>
+    </ComboBox>
+    <TextBlock Text="أحرف كلمة المرور"/>
+    <TextBox x:Name="PasswordAlphabetBox" Width="180"
+             Text="abcdefghijklmnopqrstuvwxyz0123456789"
+             TextChanged="CardAlphabet_TextChanged"/>
+</StackPanel>
                         </WrapPanel>
                              </StackPanel>
                          </Border>
-                         </UniformGrid>
+                         </Grid>
                          <Grid>
                              <Grid.ColumnDefinitions>
                                  <ColumnDefinition Width="2*"/>

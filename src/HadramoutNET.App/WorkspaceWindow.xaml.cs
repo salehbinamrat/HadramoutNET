@@ -48,6 +48,9 @@ public partial class WorkspaceWindow : Window
     private readonly DispatcherTimer _heartbeat = new();
     private readonly CancellationTokenSource _cancel = new();
     private IReadOnlyList<Voucher> _generated = [];
+    private bool _syncingCardCredentialUi;
+    private bool _syncingCardCharsetUi;
+    private string _lastCardPasswordRelation = "code_password";
     private VoucherDraftTarget? _draftTarget;
     private VoucherDraftSettings? _draftSettings;
     private readonly RouterCardTargetCatalog _cardTargets = new();
@@ -105,6 +108,8 @@ public partial class WorkspaceWindow : Window
         RouterCaption.Text = $"{session.Identity} — {session.Endpoint}";
         _heartbeat.Interval = TimeSpan.FromSeconds(20);
         _heartbeat.Tick += Heartbeat_Tick;
+        SyncCredentialPresentation();
+        SyncCharsetPresentation();
     }
 
     private async void WorkspaceLoaded(object sender, RoutedEventArgs e)
@@ -1546,6 +1551,8 @@ public partial class WorkspaceWindow : Window
         if (values.TryGetValue("create.customer", out var owner) &&
             owner.ValueKind == JsonValueKind.String) UmCustomerBox.Text = owner.GetString();
         SelectChoice(CardFormatCombo, generation.Format);
+        SyncCredentialPresentation();
+        SyncCharsetPresentation();
         if (values.TryGetValue("create.service", out var service) &&
             service.ValueKind == JsonValueKind.String) SelectChoice(CardServiceCombo, service.GetString());
         if (values.TryGetValue("create.server", out var serverValue) &&
@@ -1562,8 +1569,109 @@ public partial class WorkspaceWindow : Window
     }
 
 
-    private void CardFormat_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
+    // The original Python UI uses two visible steps: username-only or
+    // username/password, then a mutually exclusive relation. CardFormatCombo
+    // remains the single persisted format and generation source.
+    private void CardFormat_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingCardCredentialUi) return;
+        SyncCredentialPresentation();
         UpdateCreationFormOptions();
+    }
+
+    private void SyncCredentialPresentation()
+    {
+        if (CardFormatCombo is null || CardCredentialModeCombo is null ||
+            DifferentPasswordCheck is null || SamePasswordCheck is null ||
+            _syncingCardCredentialUi) return;
+        string format = Choice(CardFormatCombo);
+        if (format is not ("code_only" or "code_same_password" or "code_password"))
+            return;
+        _syncingCardCredentialUi = true;
+        try
+        {
+            if (format != "code_only") _lastCardPasswordRelation = format;
+            SelectChoice(CardCredentialModeCombo,
+                format == "code_only" ? "username_only" : "username_password");
+            bool showRelation = format != "code_only";
+            DifferentPasswordCheck.IsEnabled = showRelation;
+            SamePasswordCheck.IsEnabled = showRelation;
+            DifferentPasswordCheck.IsChecked = showRelation && format == "code_password";
+            SamePasswordCheck.IsChecked = showRelation && format == "code_same_password";
+        }
+        finally { _syncingCardCredentialUi = false; }
+    }
+
+    private void CardCredentialMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingCardCredentialUi || CardCredentialModeCombo is null ||
+            CardFormatCombo is null) return;
+        string mode = Choice(CardCredentialModeCombo);
+        if (mode is not ("username_only" or "username_password")) return;
+        SelectChoice(CardFormatCombo, VoucherCreationPresentation.ResolveFormat(
+            mode, _lastCardPasswordRelation));
+    }
+
+    private void CardPasswordRelation_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_syncingCardCredentialUi || sender is not CheckBox selected ||
+            CardCredentialModeCombo is null || CardFormatCombo is null) return;
+        if (selected.IsChecked != true)
+        {
+            // An unchecked selected option must not produce an invalid mode
+            // with both relationship checkboxes cleared.
+            SyncCredentialPresentation();
+            return;
+        }
+        _lastCardPasswordRelation = ReferenceEquals(selected, SamePasswordCheck)
+            ? "code_same_password" : "code_password";
+        SelectChoice(CardCredentialModeCombo, "username_password");
+        SelectChoice(CardFormatCombo, _lastCardPasswordRelation);
+        SyncCredentialPresentation();
+    }
+
+    private void CardCharset_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingCardCharsetUi || UsernameCharsetCombo is null ||
+            PasswordCharsetCombo is null || CardAlphabetBox is null ||
+            PasswordAlphabetBox is null || sender is not ComboBox combo) return;
+        string mode = Choice(combo);
+        if (mode is "custom" or "") return;
+        _syncingCardCharsetUi = true;
+        try
+        {
+            string alphabet = VoucherCreationPresentation.CharactersForMode(mode);
+            if (ReferenceEquals(combo, UsernameCharsetCombo))
+                CardAlphabetBox.Text = alphabet;
+            else if (ReferenceEquals(combo, PasswordCharsetCombo))
+                PasswordAlphabetBox.Text = alphabet;
+        }
+        finally { _syncingCardCharsetUi = false; }
+    }
+
+    private void CardAlphabet_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_syncingCardCharsetUi || UsernameCharsetCombo is null ||
+            PasswordCharsetCombo is null || CardAlphabetBox is null ||
+            PasswordAlphabetBox is null) return;
+        SyncCharsetPresentation();
+    }
+
+    private void SyncCharsetPresentation()
+    {
+        if (_syncingCardCharsetUi || UsernameCharsetCombo is null ||
+            PasswordCharsetCombo is null || CardAlphabetBox is null ||
+            PasswordAlphabetBox is null) return;
+        _syncingCardCharsetUi = true;
+        try
+        {
+            SelectChoice(UsernameCharsetCombo,
+                VoucherCreationPresentation.DetectCharacterMode(CardAlphabetBox.Text));
+            SelectChoice(PasswordCharsetCombo,
+                VoucherCreationPresentation.DetectCharacterMode(PasswordAlphabetBox.Text));
+        }
+        finally { _syncingCardCharsetUi = false; }
+    }
 
     private void CardService_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -1587,6 +1695,7 @@ public partial class WorkspaceWindow : Window
         bool different = Choice(CardFormatCombo) == "code_password";
         PasswordLengthBox.IsEnabled = different;
         PasswordAlphabetBox.IsEnabled = different;
+        if (PasswordCharsetCombo is not null) PasswordCharsetCombo.IsEnabled = different;
         string service = Choice(CardServiceCombo);
         CardServerCombo.IsEnabled = service == "hotspot";
         UmCustomerBox.IsEnabled = service == "userman";
