@@ -605,6 +605,9 @@
                                     Click="PreviewPrint_Click" Margin="4"/>
 <Button Content="PDF" Width="100" Height="36"
                                     Click="ExportPdf_Click" Margin="4"/>
+<Button Content="تصدير معاينة PNG" Width="165" Height="36"
+                                    Click="ExportCardPreviewPng_Click" Margin="4"
+                                    ToolTip="صورة تجريبية من تصميم الكرت الحالي دون استخدام كلمات مرور الكروت الحقيقية"/>
 <Button Content="طباعة مباشرة" Width="150" Height="36"
                                     Click="PrintCards_Click" Margin="4"/>
                          </WrapPanel>

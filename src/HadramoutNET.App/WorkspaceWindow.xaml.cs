@@ -1479,6 +1479,36 @@ public partial class WorkspaceWindow : Window
         }
     }
 
+    private void ExportCardPreviewPng_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmCurrentAccess()) return;
+        try
+        {
+            // Source Python's design page exports a sample PNG, not a
+            // snapshot of unpublished or uncertain real voucher credentials.
+            Voucher sample = VoucherInlinePreview.Choose(
+                CurrentGenerationOptions(), CurrentCardMetadataOptions(),
+                [], generatedStillCurrent: false, DateTimeOffset.Now);
+            var chooser = new SaveFileDialog
+            {
+                Title = "حفظ صورة معاينة تصميم الكرت PNG",
+                FileName = "معاينة-كرت-حضرموت",
+                Filter = "PNG|*.png",
+                DefaultExt = ".png",
+                AddExtension = true,
+                OverwritePrompt = true
+            };
+            if (chooser.ShowDialog(this) != true) return;
+            CardPreviewPngExporter.Save(chooser.FileName, sample, _printLayout, _cardArt);
+            CardsNotice.Text = "تم حفظ صورة PNG للتصميم بدقة 300 DPI. بيانات الكرت تجريبية فقط، ولم يُرسل أي أمر إلى MikroTik.";
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or
+            PrintLayoutException or CardGenerationException or UnauthorizedAccessException)
+        {
+            CardsNotice.Text = "تعذر تصدير معاينة PNG: " + ex.Message;
+        }
+    }
+
     private void ExportPdf_Click(object sender, RoutedEventArgs e)
     {
         if (!ConfirmCurrentAccess()) return;
