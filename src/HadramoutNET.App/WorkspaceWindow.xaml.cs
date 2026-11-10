@@ -1491,12 +1491,21 @@ public partial class WorkspaceWindow : Window
         if (_packages is null) return;
         try
         {
+            long? selectedId = (PackagesGrid.SelectedItem as PackagePreset)?.Id
+                ?? PackageActiveSelection.Read(_packages);
             var list = _packages.ListPackages();
+            PackagePreset? selected = selectedId is null ? null :
+                list.FirstOrDefault(item => item.Id == selectedId);
             _reloadingCardsPackages = true;
             try
             {
                 PackagesGrid.ItemsSource = list;
                 CardsPackagesCombo.ItemsSource = list;
+                if (selected is not null)
+                {
+                    PackagesGrid.SelectedItem = selected;
+                    CardsPackagesCombo.SelectedItem = selected;
+                }
             }
             finally { _reloadingCardsPackages = false; }
         }
@@ -1566,6 +1575,14 @@ public partial class WorkspaceWindow : Window
         }
         UpdateCreationFormOptions();
         WorkspaceStatus.Text = "استُعيدت خيارات الإنشاء والسعر والسعة والمدة والصلاحية وتصميم الطباعة لهذه الباقة.";
+        if (_packages is not null)
+        {
+            try { PackageActiveSelection.Save(_packages, selected.Id); }
+            catch (Exception)
+            {
+                WorkspaceStatus.Text = "استُعيدت الباقة، لكن تعذر تذكر الباقة المختارة للتشغيل القادم.";
+            }
+        }
     }
 
 
