@@ -483,6 +483,10 @@
                                 <TextBlock Text="الكمية"/>
                                 <TextBox x:Name="QtyBox" Width="95" Text="20" FlowDirection="LeftToRight" Language="en-US"
                                        TextChanged="TechnicalNumericInput_TextChanged"/>
+                                 <TextBlock x:Name="CardPageCountText" Text="الأوراق: —" FontSize="11"
+                                            Foreground="{StaticResource DarkRed}" TextWrapping="Wrap"
+                                            Width="175" Margin="0,4,0,0"
+                                            ToolTip="عدد الأوراق وصفحات PDF بحسب الكمية وتخطيط الطباعة الحالي"/>
                             </StackPanel>
 <StackPanel Margin="5">
                                 <TextBlock Text="بداية الترقيم"/>

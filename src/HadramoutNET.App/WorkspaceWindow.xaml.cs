@@ -110,6 +110,7 @@ public partial class WorkspaceWindow : Window
         _heartbeat.Tick += Heartbeat_Tick;
         SyncCredentialPresentation();
         SyncCharsetPresentation();
+        RefreshCardPageCount();
     }
 
     private async void WorkspaceLoaded(object sender, RoutedEventArgs e)
@@ -751,8 +752,32 @@ public partial class WorkspaceWindow : Window
         Close();
     }
 
-    private void TechnicalNumericInput_TextChanged(object sender, TextChangedEventArgs e) =>
+    private void TechnicalNumericInput_TextChanged(object sender, TextChangedEventArgs e)
+    {
         TechnicalTextInput.NormalizeTextBox(sender, e);
+        if (ReferenceEquals(sender, QtyBox)) RefreshCardPageCount();
+    }
+
+    private void RefreshCardPageCount()
+    {
+        if (CardPageCountText is null || QtyBox is null) return;
+        if (!TechnicalNumberParser.TryUnsignedInt(QtyBox.Text, out int quantity) || quantity <= 0)
+        {
+            CardPageCountText.Text = "أدخل كمية كروت صحيحة لحساب أوراق الطباعة.";
+            return;
+        }
+        try
+        {
+            PrintSheetPlan plan = PrintLayouts.Plan(_printLayout, quantity);
+            CardPageCountText.Text = "الأوراق: " + plan.Sheets.ToString(CultureInfo.InvariantCulture) +
+                " | صفحات PDF: " + plan.PdfPages.ToString(CultureInfo.InvariantCulture) +
+                " | " + plan.PerSheet.ToString(CultureInfo.InvariantCulture) + " كرت/ورقة";
+        }
+        catch (PrintLayoutException)
+        {
+            CardPageCountText.Text = "تخطيط الورق الحالي غير صالح؛ افتح إعدادات الطباعة.";
+        }
+    }
 
     private CardGenerationOptions CurrentGenerationOptions()
     {
@@ -1348,6 +1373,7 @@ public partial class WorkspaceWindow : Window
         PrintLayoutOptions? updated = PrintLayoutEditorWindow.Edit(this, _printLayout);
         if (updated is null) return;
         _printLayout = updated;
+        RefreshCardPageCount();
         RefreshInlineCardPreview();
         PrintLayoutInfo.Text = DescribePrintLayout(updated);
         CardsNotice.Text = "اعتُمد تخطيط الورقة لهذه الجلسة. احفظ الباقة للإبقاء عليه بعد إعادة التشغيل.";
@@ -1577,6 +1603,7 @@ public partial class WorkspaceWindow : Window
             return;
         }
         _printLayout = layout;
+        RefreshCardPageCount();
         _cardArt = artwork;
         _cardExtraSettings = CardTemplateExchange.ExtractExtras(
             selected.Settings);

@@ -157,6 +157,46 @@ internal static class PrintLayoutEditorWindow
             (combo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ??
                 throw new PrintLayoutException("اختر قيمة مدعومة من القائمة.");
 
+        var autoGrid = new Button
+        {
+            Content = "احتساب التوزيع التلقائي", Width = 210, Height = 38,
+            Margin = new Thickness(4)
+        };
+        autoGrid.Click += (_, _) =>
+        {
+            try
+            {
+                // Compute against the actual selected paper, card dimensions,
+                // margins and gaps, without altering saved settings first.
+                var draft = current with
+                {
+                    CardWidthMm = ParseNumber(width),
+                    CardHeightMm = ParseNumber(height),
+                    Rows = 1, Columns = 1,
+                    Paper = Selected(paper),
+                    Orientation = Selected(orientation),
+                    HorizontalGapMm = ParseNumber(gapH),
+                    VerticalGapMm = ParseNumber(gapV),
+                    MarginMm = ParseNumber(margin)
+                };
+                (int countRows, int countColumns) = PrintLayouts.AutoGrid(draft);
+                _ = PrintLayouts.Calculate(draft with
+                {
+                    Rows = countRows, Columns = countColumns
+                });
+                rows.Text = countRows.ToString(CultureInfo.InvariantCulture);
+                columns.Text = countColumns.ToString(CultureInfo.InvariantCulture);
+                feedback.Text = "التوزيع التلقائي: " +
+                    countRows.ToString(CultureInfo.InvariantCulture) + " صف × " +
+                    countColumns.ToString(CultureInfo.InvariantCulture) +
+                    " عمود. اضغط اعتماد التخطيط لتطبيقه.";
+            }
+            catch (PrintLayoutException error)
+            {
+                feedback.Text = error.Message;
+            }
+        };
+
         accept.Click += (_, _) =>
         {
             try
@@ -191,6 +231,7 @@ internal static class PrintLayoutEditorWindow
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
         };
+        buttons.Children.Add(autoGrid);
         buttons.Children.Add(accept);
         buttons.Children.Add(cancel);
         var content = new StackPanel();
